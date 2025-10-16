@@ -105,7 +105,7 @@ class Config(object):
         """
         yml_path = folder / filename
         if not yml_path.exists():
-            with yml_path.open('w') as fp:
+            with yml_path.open('w', encoding="utf-8") as fp:
                 temp_cfg = {}
                 for key, val in self._cfg.items():
                     if any([key.endswith(x) for x in ['_dir', '_path', '_file', '_files']]):
@@ -251,7 +251,7 @@ class Config(object):
     @staticmethod
     def _read_and_parse_config(yml_path: Path):
         if yml_path.exists():
-            with yml_path.open('r') as fp:
+            with yml_path.open('r', encoding="utf-8") as fp:
                 yaml = YAML(typ="safe")
                 cfg = yaml.load(fp)
         else:
@@ -311,6 +311,18 @@ class Config(object):
     @property
     def custom_normalization(self) -> dict:
         return self._as_default_dict(self._cfg.get("custom_normalization", {}))
+    
+    @property
+    def target_normalization(self) -> dict:
+        return self._cfg.get("target_normalization", None)
+
+    @property
+    def save_transformed_targets(self) -> dict:
+        return self._as_default_dict(self._cfg.get("save_transformed_targets", False))
+    
+    @property
+    def SH_addRollingFeatures(self) -> bool:
+        return self._cfg.get("SH_addRollingFeatures", False)
 
     @property
     def data_dir(self) -> Path:
@@ -934,6 +946,11 @@ class Config(object):
             return self._get_value_verbose("patience_early_stopping")
         
     @property
+    def min_delta_early_stopping(self) -> int:
+        """Minimum change in the monitored metric to qualify as an improvement."""
+        if self.early_stopping:
+            return self._cfg.get("min_delta_early_stopping", 0.00005)
+    @property
     def minimum_epochs_before_early_stopping(self) -> int:
         """Minimum number of epochs before early stopping can be triggered."""
         if self.early_stopping:
@@ -942,13 +959,13 @@ class Config(object):
     @property
     def dynamic_learning_rate(self) -> bool:
         """Whether to use  dynamic learning rate. Defaults to False if not set."""
-        early_stopping = self._cfg.get("early_stopping", False)
-        if early_stopping and self.validate_every != 1:
+        dynamic_learning_rate = self._cfg.get("dynamic_learning_rate", False)
+        if dynamic_learning_rate and self.validate_every != 1:
             raise ValueError(
-                "Early stopping can only be used if validation is performed every epoch (validate_every=1). "
+                "Dynamic Learning Rate can only be used if validation is performed every epoch (validate_every=1). "
                 "Set validate_every=1 in the config to use early stopping."
             )
-        return early_stopping
+        return dynamic_learning_rate
     
     @property
     def patience_dynamic_learning_rate(self) -> int:

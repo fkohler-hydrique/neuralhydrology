@@ -1,0 +1,250 @@
+# ================================================================
+# Template Configuration File by FK 
+# Delete or override values per project.
+# ================================================================
+
+# ------------------------------------------------
+# 1. Experiment setup
+# ------------------------------------------------
+experiment_name: "run"         # Name used for run folders/logs
+base_run_dir: ./runs           # Base directory for experiment runs
+run_dir: null                  # Custom run dir (overrides auto naming)
+train_dir: null                # Directory for saving training artifacts
+img_log_dir: null              # Directory for saving image logs
+
+seed: null                     # Random seed (int)
+device: "cuda:0"                   # "cpu", "mps", or "cuda:X"
+num_workers: 16                # Data loader workers
+
+# ------------------------------------------------
+# 2. Data configuration
+# ------------------------------------------------
+data_dir:               "../../../data/App"       # Path to dataset
+dataset: null               # Dataset name # for example "swisshourly"
+
+train_basin_file:       "../data/basins.txt"      # File listing training basins
+validation_basin_file:  "../data/basins.txt"      # File listing validation basins
+test_basin_file:        "../data/basins.txt"      # File listing test basins
+
+train_start_date:       null         # Format DD/MM/YYYY    "03/01/2016"                                             
+train_end_date:         null         #                      "31/02/2023"               
+validation_start_date:  null         #                      "01/03/2023"                     
+validation_end_date:    null         #                      "31/03/2024"                   
+test_start_date:        null         #                      "01/04/2024"               
+test_end_date:          null         #                      "31/05/2025"             
+
+per_basin_train_periods_file: null
+per_basin_validation_periods_file: null
+per_basin_test_periods_file: null
+
+dynamic_inputs:                  # name of your features in the dataset
+- prcp(mm/day)
+- tmax(C)
+# If multi frequencies, you can just use:
+# dynamic_inputs:                # Dynamic input features (for each frequency)
+#   1D:
+#     - prcp(mm/day)
+#   1h:
+#     - total_precipitation
+
+
+static_attributes: []          # Basin static attributes
+evolving_attributes: []        # Static attributes that change with time
+
+# Target configuration
+target_variables: 
+  - streamflow
+clip_targets_to_zero:
+  - streamflow
+
+target_loss_weights: null
+target_noise_std: null
+
+dynamic_conceptual_inputs: []  # Special conceptual model inputs
+hydroatlas_attributes: []      # Hydroatlas attributes
+additional_feature_files: []   # Extra feature files
+duplicate_features: {}         # Features to duplicate (dict or list)
+mass_inputs: []                # Mass balance inputs
+
+lagged_features:               # Lagged input features
+  streamflow: [1]
+
+custom_normalization: {}       # Dict of normalization overrides
+random_holdout_from_dynamic_features: {}
+
+rating_curve_file: null
+number_of_basins: null
+
+# ------------------------------------------------
+# 3. Model configuration
+# ------------------------------------------------
+model: null                    # Model type (e.g. "lstm", "transformer", "arlstm")
+head: null                     # Head type for output e.g. "regression", "gmm", "cmal", "umal"
+hidden_size: null              # Model hidden size (int or dict)
+forecast_hidden_size: null     # Defaults to hidden_size if None
+hindcast_hidden_size: null     # Defaults to hidden_size if None
+
+output_activation: linear
+output_dropout: 0.0
+
+# LSTM
+initial_forget_bias: 3                    # Initial bias value of the forget gate
+
+# Embedding specifications (dicts)
+dynamics_embedding: null
+# dynamics_embedding:
+#   type: fc
+#   hiddens:                                # define number of neurons per layer in the FC network used as embedding network
+#     - 30
+#     - 20
+#     - 64
+#   activation: tanh                        # activation function of embedding network
+#   dropout: 0.0                            # dropout applied to embedding network
+statics_embedding: null
+forecast_network: null
+state_handoff_network: null
+
+bidirectional_stacked_forecast_lstm: false
+shared_mtslstm: false
+transfer_mtslstm_states: {h: linear, c: linear}
+
+# Conceptual model settings
+conceptual_model: SHM
+
+# Forecasting/hindcasting inputs:
+# forecast_inputs:                          # (optional) features used during forecast phase
+#   1h:
+#     - total_precipitation
+#     - air_temperature
+# hindcast_inputs:                          # (optional) same as forecast_inputs but for hindcast
+#   1h:
+#     - total_precipitation
+#     - air_temperature
+forecast_seq_length: null       # Must be < seq_length
+forecast_overlap: null          # Must be <= forecast_seq_length
+
+
+# Auto-Regressive LSTM
+autoregressive_inputs:          # Must match lagged version of target
+  - streamflow_shift1       
+
+# Mamba-specific params
+expand: 2
+d_state: 16
+d_conv: 4
+
+# ODE-based models (check config.py)
+ode_method: euler
+ode_num_unfolds: 4
+ode_random_freq_lower_bound: null
+
+# Transformers (check config.py)
+transformer_n_heads: 4
+transformer_num_layers: 2                   # number of layers in transformer encoding:
+transformer_positional_encoding_type: sum   # type of positional encoding (sum or concatenate)
+transformer_dim_feedforward: 256            # dimension of feedforward in each encoding layer
+transformer_positional_dropout: 0.0         # dropout applied only to the positional encoding
+transformer_dropout: 0                      # dropout used in the encoding layers
+
+# ------------------------------------------------
+# 4. Training configuration
+# ------------------------------------------------
+epochs: null
+batch_size: null
+optimizer: "Adam"             # specify optimizer [Adam]
+loss: MSE                     # specify loss [MSE, NSE, RMSE]
+regularization: []              # e.g. ["l2", ["dropout", 0.5]]
+learning_rate:                # specify learning rates to use starting at specific epochs (0 is the initial learning rate)
+    0: 1e-3
+    10: 5e-4
+    20: 1e-4
+
+
+seq_length: null                # Input sequence length (in frequency of measure -> if hourly: 168 is 2weeks, 8760 is a year)
+predict_last_n: null            # Prediction horizon (will consider only the t0+predict_last_n*freq_measure point)
+
+metrics:
+- MAPE
+- NSE
+- KGE
+- MSE
+- RMSE
+- Alpha-NSE
+- Beta-NSE
+- Beta-KGE
+- Pearson-r
+- FHV
+- FMS
+- FLV
+- Peak-Timing
+- Missed-Peaks
+- Peak-MAPE
+- MAPE
+
+warmup_period: 0
+
+# Early stopping / Dynamic learning rate
+early_stopping: false
+patience_early_stopping: null
+minimum_epochs_before_early_stopping: null
+
+dynamic_learning_rate: false
+patience_dynamic_learning_rate: null
+factor_dynamic_learning_rate: null
+
+continue_from_epoch: null       # Resume training epoch
+checkpoint_path: null
+is_continue_training: false
+is_finetuning: false
+finetune_modules: []
+
+max_updates_per_epoch: null
+allow_subsequent_nan_losses: 0
+
+# ------------------------------------------------
+# 5. Output & Logging
+# ------------------------------------------------
+log_interval: 10
+log_n_figures: 0
+log_tensorboard: true
+
+save_train_data: false
+save_validation_results: false
+save_all_output: false
+save_weights_every: 1
+validate_every: 3                     # specify after how many epochs to perform validation 
+
+save_git_diff: false
+verbose: 1                      # 0 = logs only, 1 = logs + progress
+
+# ------------------------------------------------
+# 6. Advanced options
+# ------------------------------------------------
+mc_dropout: false
+
+
+# Uncertainty sampling
+n_distributions: null
+n_samples: null
+n_taus: null
+tau_up: null
+tau_down: null
+
+# Handling missing data
+nan_handling_method: masked_mean       # e.g. "mask", "zero"
+nan_step_probability: 0.0
+nan_sequence_probability: 0.0
+nan_handling_pos_encoding_size: 0
+
+# Negative sampling
+negative_sample_handling: null
+negative_sample_max_retries: null
+no_loss_frequencies: []
+
+# Frequencies usage
+use_frequencies: []
+
+# Other toggles
+timestep_counter: false
+umal_extend_batch: false
+use_basin_id_encoding: false

@@ -1,0 +1,128 @@
+2025-10-07 09:23:12,622: Logging to 1h_30ep_v1\1h_30epochs_v1_0710_092312\output.log initialized.
+2025-10-07 09:23:12,622: ### Folder structure created at 1h_30ep_v1\1h_30epochs_v1_0710_092312
+2025-10-07 09:23:12,623: ### Run configurations for 1h_30epochs_v1
+2025-10-07 09:23:12,624: experiment_name: 1h_30epochs_v1
+2025-10-07 09:23:12,624: base_run_dir: runs
+2025-10-07 09:23:12,625: run_dir: 1h_30ep_v1\1h_30epochs_v1_0710_092312
+2025-10-07 09:23:12,625: train_dir: 1h_30ep_v1\1h_30epochs_v1_0710_092312\train_data
+2025-10-07 09:23:12,626: img_log_dir: 1h_30ep_v1\1h_30epochs_v1_0710_092312\img_log
+2025-10-07 09:23:12,626: seed: 42
+2025-10-07 09:23:12,626: device: cuda:0
+2025-10-07 09:23:12,627: num_workers: 16
+2025-10-07 09:23:12,627: data_dir: ..\..\..\data\Massa
+2025-10-07 09:23:12,628: dataset: swisshourly
+2025-10-07 09:23:12,628: train_basin_file: ..\data\basins.txt
+2025-10-07 09:23:12,629: validation_basin_file: ..\data\basins.txt
+2025-10-07 09:23:12,629: test_basin_file: ..\data\basins.txt
+2025-10-07 09:23:12,630: train_start_date: 2016-01-03 00:00:00
+2025-10-07 09:23:12,630: train_end_date: 2023-02-28 00:00:00
+2025-10-07 09:23:12,631: validation_start_date: 2023-03-01 00:00:00
+2025-10-07 09:23:12,631: validation_end_date: 2024-03-31 00:00:00
+2025-10-07 09:23:12,632: test_start_date: 2024-04-01 00:00:00
+2025-10-07 09:23:12,632: test_end_date: 2025-05-31 00:00:00
+2025-10-07 09:23:12,632: dynamic_inputs: ['prec_bruchji', 'prec_fieschertal', 'temp_binn', 'temp_visp', 'ray_visp', 'pression_vapeur_binn']
+2025-10-07 09:23:12,633: dynamic_conceptual_inputs: ['day', 'hr']
+2025-10-07 09:23:12,633: target_variables: ['streamflow']
+2025-10-07 09:23:12,634: clip_targets_to_zero: ['streamflow']
+2025-10-07 09:23:12,634: lagged_features: {'streamflow': [1]}
+2025-10-07 09:23:12,635: model: arlstm
+2025-10-07 09:23:12,635: head: regression
+2025-10-07 09:23:12,635: hidden_size: 128
+2025-10-07 09:23:12,636: output_activation: linear
+2025-10-07 09:23:12,636: output_dropout: 0.15
+2025-10-07 09:23:12,637: initial_forget_bias: 2
+2025-10-07 09:23:12,637: dynamics_embedding: None
+2025-10-07 09:23:12,637: statics_embedding: None
+2025-10-07 09:23:12,638: autoregressive_inputs: ['streamflow_shift1']
+2025-10-07 09:23:12,638: epochs: 30
+2025-10-07 09:23:12,639: max_updates_per_epoch: 40
+2025-10-07 09:23:12,639: batch_size: 64
+2025-10-07 09:23:12,640: optimizer: Adam
+2025-10-07 09:23:12,640: loss: MSE
+2025-10-07 09:23:12,640: learning_rate: {0: 0.001, 6: 0.0008, 10: 0.0005, 15: 0.0003, 20: 0.0001, 25: 5e-05}
+2025-10-07 09:23:12,641: clip_gradient_norm: 5.0
+2025-10-07 09:23:12,641: seq_length: 336
+2025-10-07 09:23:12,641: predict_last_n: 1
+2025-10-07 09:23:12,642: metrics: ['MAPE', 'NSE', 'MSE', 'RMSE']
+2025-10-07 09:23:12,642: validate_every: 5
+2025-10-07 09:23:12,642: validate_n_random_basins: 1
+2025-10-07 09:23:12,643: log_interval: 10
+2025-10-07 09:23:12,643: log_n_figures: 1
+2025-10-07 09:23:12,643: log_tensorboard: True
+2025-10-07 09:23:12,643: save_train_data: True
+2025-10-07 09:23:12,644: save_validation_results: True
+2025-10-07 09:23:12,644: save_all_output: False
+2025-10-07 09:23:12,644: save_weights_every: 10
+2025-10-07 09:23:12,644: save_git_diff: False
+2025-10-07 09:23:12,645: verbose: 1
+2025-10-07 09:23:12,645: nan_handling_method: masked_mean
+2025-10-07 09:23:12,646: nan_step_probability: 0.0
+2025-10-07 09:23:12,647: nan_sequence_probability: 0.0
+2025-10-07 09:23:12,647: nan_handling_pos_encoding_size: 0
+2025-10-07 09:23:12,647: number_of_basins: 1
+2025-10-07 09:23:12,675: ### Device cuda:0 will be used for training
+2025-10-07 09:23:12,676: Loading basin data into xarray data set.
+2025-10-07 09:26:30,118: Logging to c:\Users\Kohler\Documents\NeuralHydrology_FK\neuralhydrology\test_Fla\Massa\ARLSM_simple\runs\1h_30epochs_v2_0710_092630\output.log initialized.
+2025-10-07 09:26:30,119: ### Folder structure created at c:\Users\Kohler\Documents\NeuralHydrology_FK\neuralhydrology\test_Fla\Massa\ARLSM_simple\runs\1h_30epochs_v2_0710_092630
+2025-10-07 09:26:30,119: ### Run configurations for 1h_30epochs_v2
+2025-10-07 09:26:30,120: experiment_name: 1h_30epochs_v2
+2025-10-07 09:26:30,121: base_run_dir: runs
+2025-10-07 09:26:30,121: train_dir: c:\Users\Kohler\Documents\NeuralHydrology_FK\neuralhydrology\test_Fla\Massa\ARLSM_simple\runs\1h_30epochs_v2_0710_092630\train_data
+2025-10-07 09:26:30,121: img_log_dir: c:\Users\Kohler\Documents\NeuralHydrology_FK\neuralhydrology\test_Fla\Massa\ARLSM_simple\runs\1h_30epochs_v2_0710_092630\img_log
+2025-10-07 09:26:30,122: seed: 42
+2025-10-07 09:26:30,122: device: cuda:0
+2025-10-07 09:26:30,122: num_workers: 16
+2025-10-07 09:26:30,123: data_dir: ..\..\..\data\Massa
+2025-10-07 09:26:30,123: dataset: swisshourly
+2025-10-07 09:26:30,124: train_basin_file: ..\data\basins.txt
+2025-10-07 09:26:30,124: validation_basin_file: ..\data\basins.txt
+2025-10-07 09:26:30,124: test_basin_file: ..\data\basins.txt
+2025-10-07 09:26:30,124: train_start_date: 2016-01-03 00:00:00
+2025-10-07 09:26:30,125: train_end_date: 2023-02-28 00:00:00
+2025-10-07 09:26:30,125: validation_start_date: 2023-03-01 00:00:00
+2025-10-07 09:26:30,125: validation_end_date: 2024-03-31 00:00:00
+2025-10-07 09:26:30,126: test_start_date: 2024-04-01 00:00:00
+2025-10-07 09:26:30,126: test_end_date: 2025-05-31 00:00:00
+2025-10-07 09:26:30,126: dynamic_inputs: ['prec_bruchji', 'prec_fieschertal', 'temp_binn', 'temp_visp', 'ray_visp', 'pression_vapeur_binn']
+2025-10-07 09:26:30,127: dynamic_conceptual_inputs: ['day', 'hr']
+2025-10-07 09:26:30,127: target_variables: ['streamflow']
+2025-10-07 09:26:30,127: clip_targets_to_zero: ['streamflow']
+2025-10-07 09:26:30,128: lagged_features: {'streamflow': [1]}
+2025-10-07 09:26:30,128: model: arlstm
+2025-10-07 09:26:30,129: head: regression
+2025-10-07 09:26:30,129: hidden_size: 128
+2025-10-07 09:26:30,129: output_activation: linear
+2025-10-07 09:26:30,130: output_dropout: 0.15
+2025-10-07 09:26:30,130: initial_forget_bias: 2
+2025-10-07 09:26:30,130: dynamics_embedding: None
+2025-10-07 09:26:30,131: statics_embedding: None
+2025-10-07 09:26:30,131: autoregressive_inputs: ['streamflow_shift1']
+2025-10-07 09:26:30,132: epochs: 30
+2025-10-07 09:26:30,132: max_updates_per_epoch: 40
+2025-10-07 09:26:30,132: batch_size: 64
+2025-10-07 09:26:30,133: optimizer: Adam
+2025-10-07 09:26:30,133: loss: MSE
+2025-10-07 09:26:30,133: learning_rate: {0: 0.001, 6: 0.0008, 10: 0.0005, 15: 0.0003, 20: 0.0001, 25: 5e-05}
+2025-10-07 09:26:30,134: clip_gradient_norm: 5.0
+2025-10-07 09:26:30,134: seq_length: 336
+2025-10-07 09:26:30,136: predict_last_n: 1
+2025-10-07 09:26:30,137: metrics: ['MAPE', 'NSE', 'MSE', 'RMSE']
+2025-10-07 09:26:30,138: validate_every: 5
+2025-10-07 09:26:30,138: validate_n_random_basins: 1
+2025-10-07 09:26:30,139: log_interval: 10
+2025-10-07 09:26:30,139: log_n_figures: 1
+2025-10-07 09:26:30,139: log_tensorboard: True
+2025-10-07 09:26:30,140: save_train_data: True
+2025-10-07 09:26:30,140: save_validation_results: True
+2025-10-07 09:26:30,140: save_all_output: False
+2025-10-07 09:26:30,141: save_weights_every: 10
+2025-10-07 09:26:30,141: save_git_diff: False
+2025-10-07 09:26:30,141: verbose: 1
+2025-10-07 09:26:30,142: nan_handling_method: masked_mean
+2025-10-07 09:26:30,142: nan_step_probability: 0.0
+2025-10-07 09:26:30,143: nan_sequence_probability: 0.0
+2025-10-07 09:26:30,143: nan_handling_pos_encoding_size: 0
+2025-10-07 09:26:30,143: number_of_basins: 1
+2025-10-07 09:26:30,143: run_dir: c:\Users\Kohler\Documents\NeuralHydrology_FK\neuralhydrology\test_Fla\Massa\ARLSM_simple\runs\1h_30epochs_v2_0710_092630
+2025-10-07 09:26:30,146: ### Device cuda:0 will be used for training
+2025-10-07 09:26:30,147: Loading basin data into xarray data set.

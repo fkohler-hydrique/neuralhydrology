@@ -1,0 +1,80 @@
+autoregressive_inputs:
+- streamflow_shift1
+base_run_dir: runs
+batch_size: 64
+clip_gradient_norm: 5.0
+clip_targets_to_zero:
+- streamflow
+commit_hash: 1d5716d
+data_dir: ..\..\..\data\Massa
+dataset: swisshourly
+device: cuda:0
+dynamic_conceptual_inputs:
+- day
+dynamic_inputs:
+- prec_bruchji
+- temp_binn
+- rad_visp
+dynamics_embedding:
+epochs: 30
+experiment_name: 1h_30epochs_v1
+head: regression
+hidden_size: 64
+img_log_dir: 1h_30ep_v1\1h_30epochs_v1_0610_163603\img_log
+initial_forget_bias: 2.5
+lagged_features:
+  streamflow:
+  - 1
+learning_rate:
+  0: 0.001
+  6: 0.0008
+  10: 0.0005
+  15: 0.0003
+  20: 0.0001
+  25: 5e-05
+log_interval: 10
+log_n_figures: 1
+log_tensorboard: true
+loss: MSE
+max_updates_per_epoch: 30
+metrics:
+- MAPE
+- NSE
+- MSE
+- RMSE
+model: arlstm
+nan_handling_method: masked_mean
+nan_handling_pos_encoding_size: 0
+nan_sequence_probability: 0.0
+nan_step_probability: 0.0
+num_workers: 16
+number_of_basins: 1
+optimizer: Adam
+output_activation: linear
+output_dropout: 0.15
+package_version: 1.12.0
+predict_last_n: 1
+run_dir: 1h_30ep_v1\1h_30epochs_v1_0610_163603
+save_all_output: false
+save_git_diff: false
+save_train_data: true
+save_validation_results: true
+save_weights_every: 10
+seed: 42
+seq_length: 168
+statics_embedding:
+target_variables:
+- streamflow
+test_basin_file: ..\data\basins.txt
+test_end_date: 31/05/2025
+test_start_date: 01/04/2024
+train_basin_file: ..\data\basins.txt
+train_dir: 1h_30ep_v1\1h_30epochs_v1_0610_163603\train_data
+train_end_date: 28/02/2023
+train_start_date: 03/01/2016
+validate_every: 5
+validate_n_random_basins: 1
+validation_basin_file: ..\data\basins.txt
+validation_end_date: 31/03/2024
+validation_start_date: 01/03/2023
+verbose: 1

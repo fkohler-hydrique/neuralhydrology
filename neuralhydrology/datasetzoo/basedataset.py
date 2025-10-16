@@ -137,10 +137,8 @@ class BaseDataset(Dataset):
             if self.is_train:
                 # creates lookup table for the number of basins in the training set
                 self._create_id_to_int()
-
         # load and preprocess data
         self._load_data()
-
         if self.is_train:
             self._dump_scaler()
 
@@ -354,21 +352,29 @@ class BaseDataset(Dataset):
             else:
                 # keep all frequencies' dynamic inputs
                 keep_cols += [i for inputs in self.cfg.dynamic_inputs.values() for i in inputs]
-
             # Keep the dynamic_conceptual_inputs
             keep_cols += self.cfg.dynamic_conceptual_inputs
 
             # make sure that even inputs that are used in multiple frequencies occur only once in the df
             keep_cols = list(sorted(set(keep_cols)))
-
             if not self._disable_pbar:
                 LOGGER.info("Loading basin data into xarray data set.")
-            for basin in tqdm(self.basins, disable=self._disable_pbar, file=sys.stdout):
+            for basin in tqdm(self.basins, disable=self._disable_pbar, file=sys.stdout, leave=False):
                 df = self._load_basin_data(basin)
 
+                # print("Basin data loaded !")
+                if self.cfg.target_normalization is not None:
+                    print("checkpoint 1")
+                    # print("Applying target normalization")
+                    for target in self.cfg.target_variables:
+                        if self.cfg.target_normalization['streamflow']['transform'] == "log":
+                            log_offset = self.cfg.target_normalization['streamflow']['log_offset']
+                            df[target] = np.log(df[target] + log_offset)
+                            # print("target logged ")
                 # add columns from dataframes passed as additional data files
                 df = pd.concat([df, *[d[basin] for d in self.additional_features]], axis=1)
 
+                print("checkpoint 2")
                 # if target variables are missing for basin, add empty column to still allow predictions to be made
                 if not self.is_train:
                     df = self._add_missing_targets(df)
@@ -378,6 +384,19 @@ class BaseDataset(Dataset):
 
                 # check if a shifted copy of a feature should be added
                 df = self._add_lagged_features(df)
+
+                # Here i had some problems with the type of the index: 
+                # if isinstance(df.index, pd.MultiIndex):
+                #     print("ASKIP multiindex")
+                #     df = df.reset_index()
+                #     print("WUH")
+                #     time_col = self._find_datetime_col(df)
+                #     df[time_col] = pd.to_datetime(df[time_col], errors="coerce")
+                #     if df[time_col].isna().any():
+                #         LOGGER.warning(f"Some timestamps failed to parse in column '{time_col}'. Dropping NaT rows.")
+                #         df = df[~df[time_col].isna()]
+                #     df = df.sort_values(time_col)
+                #     df = df.set_index(time_col)
 
                 # remove unnecessary columns
                 try:
@@ -505,10 +524,12 @@ class BaseDataset(Dataset):
 
             # create one large dataset that has two coordinates: datetime and basin
             xr = xarray.concat(data_list, dim="basin")
+            # print("Xarray with data_list from basin created !")
 
             if self.is_train and self.cfg.save_train_data:
+                # print("Saving xarray dataset to disk")
                 self._save_xarray_dataset(xr)
-
+                # print("Xarray dataset saved !")
         else:
             with self.cfg.train_data_file.open("rb") as fp:
                 d = pickle.load(fp)
@@ -516,7 +537,7 @@ class BaseDataset(Dataset):
             if not self.frequencies:
                 native_frequency = utils.infer_frequency(xr["date"].values)
                 self.frequencies = [native_frequency]
-
+        print("Xarray dataset loaded or created !")
         return xr
 
     def _save_xarray_dataset(self, xr: xarray.Dataset):
@@ -558,7 +579,7 @@ class BaseDataset(Dataset):
         # list to collect basins ids of basins without a single training sample
         basins_without_samples = []
         basin_coordinates = xr["basin"].values.tolist()
-        for basin in tqdm(basin_coordinates, file=sys.stdout, disable=self._disable_pbar):
+        for basin in tqdm(basin_coordinates, file=sys.stdout, disable=self._disable_pbar, leave=False):
 
             # store data of each frequency as numpy array of shape [time steps, features] and dates as numpy array of
             # shape (time steps,)
@@ -572,6 +593,14 @@ class BaseDataset(Dataset):
             # converting from xarray to pandas DataFrame because resampling is much faster in pandas.
             df_native = xr.sel(basin=basin).to_dataframe()
             for freq in self.frequencies:
+                
+                # # --- ensure df_native has flat string columns (handle possible MultiIndex) ---
+                # if isinstance(df_native.columns, pd.MultiIndex):
+                #     print("ya du multiindex la gros")
+                #     # flatten multiindex into joined strings
+                #     df_native.columns = ['_'.join([str(part) for part in col if part is not None and part != ''])
+                #                         for col in df_native.columns]
+
                 # make sure that possible mass inputs are sorted to the beginning of the dynamic feature list
                 if isinstance(self.cfg.dynamic_inputs, list):
                     dynamic_cols = self.cfg.mass_inputs + self.cfg.dynamic_inputs_flattened
@@ -583,6 +612,7 @@ class BaseDataset(Dataset):
 
                 df_resampled = df_native[dynamic_cols + self.cfg.target_variables + self.cfg.evolving_attributes +
                                          self.cfg.autoregressive_inputs].resample(freq).mean()
+                # df_resampled = df_native
 
                 # pull all of the data that needs to be validated
                 x_d[freq] = {col: df_resampled[[col]].values for col in dynamic_cols}
@@ -758,9 +788,11 @@ class BaseDataset(Dataset):
         xr = (xr - self.scaler["xarray_feature_center"]) / self.scaler["xarray_feature_scale"]
 
         self._create_lookup_table(xr)
+        # print("Load_data and Create_lookup_table OK !")
+
 
     def _setup_normalization(self, xr: xarray.Dataset):
-        # default center and scale values are feature mean and std
+         # default center and scale values are feature mean and std
         self.scaler["xarray_feature_scale"] = xr.std(skipna=True)
         self.scaler["xarray_feature_center"] = xr.mean(skipna=True)
 

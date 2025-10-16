@@ -40,8 +40,13 @@ class SequentialForecastLSTM(BaseModel):
             raise ValueError('Forecast overlap cannot be set for a sequential forecasting model. '
                              'Please set to None or remove from config file.')
 
+        # print("il est con celui qui a codé cela")
         self.forecast_embedding_net = InputLayer(cfg, embedding_type='forecast')
+        
+        # print("jy comprends plus r")
         self.hindcast_embedding_net = InputLayer(cfg, embedding_type='hindcast')
+        # print(self.forecast_embedding_net.output_size)
+        # print(self.hindcast_embedding_net.output_size)
 
         if self.forecast_embedding_net.output_size != self.hindcast_embedding_net.output_size:
             raise ValueError('Forecast and hindcast embedding nets must have the same output size when using a sequential forecast LSTM.')

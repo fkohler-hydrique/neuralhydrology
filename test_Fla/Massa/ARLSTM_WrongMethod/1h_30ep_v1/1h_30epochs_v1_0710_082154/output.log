@@ -1,0 +1,185 @@
+2025-10-07 08:21:54,713: Logging to 1h_30ep_v1\1h_30epochs_v1_0710_082154\output.log initialized.
+2025-10-07 08:21:54,714: ### Folder structure created at 1h_30ep_v1\1h_30epochs_v1_0710_082154
+2025-10-07 08:21:54,715: ### Run configurations for 1h_30epochs_v1
+2025-10-07 08:21:54,716: experiment_name: 1h_30epochs_v1
+2025-10-07 08:21:54,716: base_run_dir: runs
+2025-10-07 08:21:54,717: run_dir: 1h_30ep_v1\1h_30epochs_v1_0710_082154
+2025-10-07 08:21:54,717: train_dir: 1h_30ep_v1\1h_30epochs_v1_0710_082154\train_data
+2025-10-07 08:21:54,718: img_log_dir: 1h_30ep_v1\1h_30epochs_v1_0710_082154\img_log
+2025-10-07 08:21:54,718: seed: 42
+2025-10-07 08:21:54,719: device: cuda:0
+2025-10-07 08:21:54,719: num_workers: 16
+2025-10-07 08:21:54,720: data_dir: ..\..\..\data\Massa
+2025-10-07 08:21:54,721: dataset: swisshourly
+2025-10-07 08:21:54,722: train_basin_file: ..\data\basins.txt
+2025-10-07 08:21:54,722: validation_basin_file: ..\data\basins.txt
+2025-10-07 08:21:54,722: test_basin_file: ..\data\basins.txt
+2025-10-07 08:21:54,723: train_start_date: 2016-01-03 00:00:00
+2025-10-07 08:21:54,724: train_end_date: 2023-02-28 00:00:00
+2025-10-07 08:21:54,724: validation_start_date: 2023-03-01 00:00:00
+2025-10-07 08:21:54,725: validation_end_date: 2024-03-31 00:00:00
+2025-10-07 08:21:54,726: test_start_date: 2024-04-01 00:00:00
+2025-10-07 08:21:54,726: test_end_date: 2025-05-31 00:00:00
+2025-10-07 08:21:54,727: dynamic_inputs: ['prec_bruchji', 'temp_binn', 'rad_visp']
+2025-10-07 08:21:54,728: dynamic_conceptual_inputs: ['day']
+2025-10-07 08:21:54,728: target_variables: ['streamflow']
+2025-10-07 08:21:54,729: clip_targets_to_zero: ['streamflow']
+2025-10-07 08:21:54,730: lagged_features: {'streamflow': [1]}
+2025-10-07 08:21:54,731: model: arlstm
+2025-10-07 08:21:54,733: head: regression
+2025-10-07 08:21:54,734: hidden_size: 64
+2025-10-07 08:21:54,734: output_activation: linear
+2025-10-07 08:21:54,735: output_dropout: 0.15
+2025-10-07 08:21:54,736: initial_forget_bias: 2.5
+2025-10-07 08:21:54,737: dynamics_embedding: None
+2025-10-07 08:21:54,738: statics_embedding: None
+2025-10-07 08:21:54,738: autoregressive_inputs: ['streamflow_shift1']
+2025-10-07 08:21:54,739: epochs: 30
+2025-10-07 08:21:54,739: max_updates_per_epoch: 30
+2025-10-07 08:21:54,740: batch_size: 32
+2025-10-07 08:21:54,740: optimizer: Adam
+2025-10-07 08:21:54,741: loss: MSE
+2025-10-07 08:21:54,741: learning_rate: {0: 0.001, 6: 0.0008, 10: 0.0005, 15: 0.0003, 20: 0.0001, 25: 5e-05}
+2025-10-07 08:21:54,742: clip_gradient_norm: 5.0
+2025-10-07 08:21:54,743: seq_length: 168
+2025-10-07 08:21:54,743: predict_last_n: 1
+2025-10-07 08:21:54,744: metrics: ['MAPE', 'NSE', 'MSE', 'RMSE']
+2025-10-07 08:21:54,744: validate_every: 5
+2025-10-07 08:21:54,744: validate_n_random_basins: 1
+2025-10-07 08:21:54,745: log_interval: 10
+2025-10-07 08:21:54,746: log_n_figures: 1
+2025-10-07 08:21:54,747: log_tensorboard: True
+2025-10-07 08:21:54,747: save_train_data: True
+2025-10-07 08:21:54,748: save_validation_results: True
+2025-10-07 08:21:54,749: save_all_output: False
+2025-10-07 08:21:54,749: save_weights_every: 10
+2025-10-07 08:21:54,750: save_git_diff: False
+2025-10-07 08:21:54,751: verbose: 1
+2025-10-07 08:21:54,751: nan_handling_method: masked_mean
+2025-10-07 08:21:54,752: nan_step_probability: 0.0
+2025-10-07 08:21:54,752: nan_sequence_probability: 0.0
+2025-10-07 08:21:54,753: nan_handling_pos_encoding_size: 0
+2025-10-07 08:21:54,754: number_of_basins: 1
+2025-10-07 08:21:54,761: ### Device cuda:0 will be used for training
+2025-10-07 08:21:54,762: Loading basin data into xarray data set.
+2025-10-07 08:21:55,527: Create lookup table and convert to pytorch tensor
+2025-10-07 08:22:45,961: Epoch 1 average loss: avg_loss: 0.11165, avg_total_loss: 0.11165
+2025-10-07 08:23:36,070: Epoch 2 average loss: avg_loss: 0.04376, avg_total_loss: 0.04376
+2025-10-07 08:24:24,167: Epoch 3 average loss: avg_loss: 0.03178, avg_total_loss: 0.03178
+2025-10-07 08:25:11,352: Epoch 4 average loss: avg_loss: 0.02533, avg_total_loss: 0.02533
+2025-10-07 08:25:59,476: Epoch 5 average loss: avg_loss: 0.01878, avg_total_loss: 0.01878
+2025-10-07 08:26:34,373: Stored metrics at 1h_30ep_v1\1h_30epochs_v1_0710_082154\validation\model_epoch005\validation_metrics.csv
+2025-10-07 08:26:34,375: Stored results at 1h_30ep_v1\1h_30epochs_v1_0710_082154\validation\model_epoch005\validation_results.p
+2025-10-07 08:26:34,377: Epoch 5 average validation loss: 0.01328 -- Median validation metrics: avg_loss: 0.01328, MAPE: 88.00849, NSE: 0.97682, MSE: 12.82071, RMSE: 3.58060
+2025-10-07 08:26:34,377: Setting learning rate to 0.0008
+2025-10-07 08:27:22,161: Epoch 6 average loss: avg_loss: 0.01501, avg_total_loss: 0.01501
+2025-10-07 08:28:08,928: Epoch 7 average loss: avg_loss: 0.01362, avg_total_loss: 0.01362
+2025-10-07 08:28:55,418: Epoch 8 average loss: avg_loss: 0.01243, avg_total_loss: 0.01243
+2025-10-07 08:29:42,076: Epoch 9 average loss: avg_loss: 0.01216, avg_total_loss: 0.01216
+2025-10-07 08:29:42,077: Setting learning rate to 0.0005
+2025-10-07 08:30:29,100: Epoch 10 average loss: avg_loss: 0.01157, avg_total_loss: 0.01157
+2025-10-07 08:31:03,247: Stored metrics at 1h_30ep_v1\1h_30epochs_v1_0710_082154\validation\model_epoch010\validation_metrics.csv
+2025-10-07 08:31:03,249: Stored results at 1h_30ep_v1\1h_30epochs_v1_0710_082154\validation\model_epoch010\validation_results.p
+2025-10-07 08:31:03,250: Epoch 10 average validation loss: 0.00866 -- Median validation metrics: avg_loss: 0.00866, MAPE: 32.00638, NSE: 0.98487, MSE: 8.36806, RMSE: 2.89276
+2025-10-07 08:31:47,668: Epoch 11 average loss: avg_loss: 0.01112, avg_total_loss: 0.01112
+2025-10-07 08:32:32,594: Epoch 12 average loss: avg_loss: 0.01236, avg_total_loss: 0.01236
+2025-10-07 08:33:16,041: Epoch 13 average loss: avg_loss: 0.01112, avg_total_loss: 0.01112
+2025-10-07 08:34:01,318: Epoch 14 average loss: avg_loss: 0.01155, avg_total_loss: 0.01155
+2025-10-07 08:34:01,319: Setting learning rate to 0.0003
+2025-10-07 08:34:45,756: Epoch 15 average loss: avg_loss: 0.00808, avg_total_loss: 0.00808
+2025-10-07 08:35:18,928: Stored metrics at 1h_30ep_v1\1h_30epochs_v1_0710_082154\validation\model_epoch015\validation_metrics.csv
+2025-10-07 08:35:18,930: Stored results at 1h_30ep_v1\1h_30epochs_v1_0710_082154\validation\model_epoch015\validation_results.p
+2025-10-07 08:35:18,932: Epoch 15 average validation loss: 0.00657 -- Median validation metrics: avg_loss: 0.00657, MAPE: 26.96915, NSE: 0.98853, MSE: 6.34668, RMSE: 2.51926
+2025-10-07 08:36:02,917: Epoch 16 average loss: avg_loss: 0.00908, avg_total_loss: 0.00908
+2025-10-07 08:36:47,739: Epoch 17 average loss: avg_loss: 0.00900, avg_total_loss: 0.00900
+2025-10-07 08:37:39,783: Epoch 18 average loss: avg_loss: 0.00865, avg_total_loss: 0.00865
+2025-10-07 08:38:28,351: Epoch 19 average loss: avg_loss: 0.00845, avg_total_loss: 0.00845
+2025-10-07 08:38:28,352: Setting learning rate to 0.0001
+2025-10-07 08:39:14,286: Epoch 20 average loss: avg_loss: 0.00677, avg_total_loss: 0.00677
+2025-10-07 08:39:50,270: Stored metrics at 1h_30ep_v1\1h_30epochs_v1_0710_082154\validation\model_epoch020\validation_metrics.csv
+2025-10-07 08:39:50,271: Stored results at 1h_30ep_v1\1h_30epochs_v1_0710_082154\validation\model_epoch020\validation_results.p
+2025-10-07 08:39:50,273: Epoch 20 average validation loss: 0.00603 -- Median validation metrics: avg_loss: 0.00603, MAPE: 20.71115, NSE: 0.98948, MSE: 5.81998, RMSE: 2.41246
+2025-10-07 08:40:36,227: Epoch 21 average loss: avg_loss: 0.00867, avg_total_loss: 0.00867
+2025-10-07 08:41:22,679: Epoch 22 average loss: avg_loss: 0.00819, avg_total_loss: 0.00819
+2025-10-07 08:42:10,155: Epoch 23 average loss: avg_loss: 0.00899, avg_total_loss: 0.00899
+2025-10-07 08:42:55,947: Epoch 24 average loss: avg_loss: 0.00833, avg_total_loss: 0.00833
+2025-10-07 08:42:55,948: Setting learning rate to 5e-05
+2025-10-07 08:43:42,830: Epoch 25 average loss: avg_loss: 0.00859, avg_total_loss: 0.00859
+2025-10-07 08:44:22,339: Stored metrics at 1h_30ep_v1\1h_30epochs_v1_0710_082154\validation\model_epoch025\validation_metrics.csv
+2025-10-07 08:44:22,341: Stored results at 1h_30ep_v1\1h_30epochs_v1_0710_082154\validation\model_epoch025\validation_results.p
+2025-10-07 08:44:22,343: Epoch 25 average validation loss: 0.00594 -- Median validation metrics: avg_loss: 0.00594, MAPE: 21.93466, NSE: 0.98963, MSE: 5.73630, RMSE: 2.39506
+2025-10-07 08:45:08,849: Epoch 26 average loss: avg_loss: 0.00800, avg_total_loss: 0.00800
+2025-10-07 08:45:56,142: Epoch 27 average loss: avg_loss: 0.00856, avg_total_loss: 0.00856
+2025-10-07 08:46:43,008: Epoch 28 average loss: avg_loss: 0.00866, avg_total_loss: 0.00866
+2025-10-07 08:47:31,482: Epoch 29 average loss: avg_loss: 0.00833, avg_total_loss: 0.00833
+2025-10-07 08:48:19,773: Epoch 30 average loss: avg_loss: 0.00770, avg_total_loss: 0.00770
+2025-10-07 08:48:59,636: Stored metrics at 1h_30ep_v1\1h_30epochs_v1_0710_082154\validation\model_epoch030\validation_metrics.csv
+2025-10-07 08:48:59,639: Stored results at 1h_30ep_v1\1h_30epochs_v1_0710_082154\validation\model_epoch030\validation_results.p
+2025-10-07 08:48:59,641: Epoch 30 average validation loss: 0.00570 -- Median validation metrics: avg_loss: 0.00570, MAPE: 21.14843, NSE: 0.99005, MSE: 5.50621, RMSE: 2.34653
+2025-10-07 08:49:00,353: Using the model weights from runs\1h_30ep_v1\model_epoch030.pt
+2025-10-07 08:49:40,899: Stored metrics at runs\1h_30ep_v1\test\model_epoch030\test_metrics.csv
+2025-10-07 08:49:40,902: Stored results at runs\1h_30ep_v1\test\model_epoch030\test_results.p
+2025-10-07 09:24:49,042: Logging to 1h_30ep_v1\1h_30epochs_v1_0710_092449\output.log initialized.
+2025-10-07 09:24:49,043: ### Folder structure created at 1h_30ep_v1\1h_30epochs_v1_0710_092449
+2025-10-07 09:24:49,044: ### Run configurations for 1h_30epochs_v1
+2025-10-07 09:24:49,044: experiment_name: 1h_30epochs_v1
+2025-10-07 09:24:49,045: base_run_dir: runs
+2025-10-07 09:24:49,045: run_dir: 1h_30ep_v1\1h_30epochs_v1_0710_092449
+2025-10-07 09:24:49,046: train_dir: 1h_30ep_v1\1h_30epochs_v1_0710_092449\train_data
+2025-10-07 09:24:49,046: img_log_dir: 1h_30ep_v1\1h_30epochs_v1_0710_092449\img_log
+2025-10-07 09:24:49,046: seed: 42
+2025-10-07 09:24:49,047: device: cuda:0
+2025-10-07 09:24:49,048: num_workers: 16
+2025-10-07 09:24:49,048: data_dir: ..\..\..\data\Massa
+2025-10-07 09:24:49,049: dataset: swisshourly
+2025-10-07 09:24:49,049: train_basin_file: ..\data\basins.txt
+2025-10-07 09:24:49,050: validation_basin_file: ..\data\basins.txt
+2025-10-07 09:24:49,051: test_basin_file: ..\data\basins.txt
+2025-10-07 09:24:49,051: train_start_date: 2016-01-03 00:00:00
+2025-10-07 09:24:49,052: train_end_date: 2023-02-28 00:00:00
+2025-10-07 09:24:49,052: validation_start_date: 2023-03-01 00:00:00
+2025-10-07 09:24:49,053: validation_end_date: 2024-03-31 00:00:00
+2025-10-07 09:24:49,054: test_start_date: 2024-04-01 00:00:00
+2025-10-07 09:24:49,054: test_end_date: 2025-05-31 00:00:00
+2025-10-07 09:24:49,055: dynamic_inputs: ['prec_bruchji', 'temp_binn', 'rad_visp']
+2025-10-07 09:24:49,055: dynamic_conceptual_inputs: ['day']
+2025-10-07 09:24:49,056: target_variables: ['streamflow']
+2025-10-07 09:24:49,056: clip_targets_to_zero: ['streamflow']
+2025-10-07 09:24:49,056: lagged_features: {'streamflow': [1]}
+2025-10-07 09:24:49,057: model: arlstm
+2025-10-07 09:24:49,057: head: regression
+2025-10-07 09:24:49,058: hidden_size: 64
+2025-10-07 09:24:49,058: output_activation: linear
+2025-10-07 09:24:49,059: output_dropout: 0.15
+2025-10-07 09:24:49,059: initial_forget_bias: 2.5
+2025-10-07 09:24:49,059: dynamics_embedding: None
+2025-10-07 09:24:49,060: statics_embedding: None
+2025-10-07 09:24:49,060: autoregressive_inputs: ['streamflow_shift1']
+2025-10-07 09:24:49,061: epochs: 30
+2025-10-07 09:24:49,061: max_updates_per_epoch: 30
+2025-10-07 09:24:49,062: batch_size: 32
+2025-10-07 09:24:49,062: optimizer: Adam
+2025-10-07 09:24:49,063: loss: MSE
+2025-10-07 09:24:49,063: learning_rate: {0: 0.001, 6: 0.0008, 10: 0.0005, 15: 0.0003, 20: 0.0001, 25: 5e-05}
+2025-10-07 09:24:49,064: clip_gradient_norm: 5.0
+2025-10-07 09:24:49,065: seq_length: 168
+2025-10-07 09:24:49,065: predict_last_n: 1
+2025-10-07 09:24:49,066: metrics: ['MAPE', 'NSE', 'MSE', 'RMSE']
+2025-10-07 09:24:49,070: validate_every: 5
+2025-10-07 09:24:49,071: validate_n_random_basins: 1
+2025-10-07 09:24:49,072: log_interval: 10
+2025-10-07 09:24:49,072: log_n_figures: 1
+2025-10-07 09:24:49,073: log_tensorboard: True
+2025-10-07 09:24:49,073: save_train_data: True
+2025-10-07 09:24:49,074: save_validation_results: True
+2025-10-07 09:24:49,074: save_all_output: False
+2025-10-07 09:24:49,074: save_weights_every: 10
+2025-10-07 09:24:49,075: save_git_diff: False
+2025-10-07 09:24:49,075: verbose: 1
+2025-10-07 09:24:49,075: nan_handling_method: masked_mean
+2025-10-07 09:24:49,076: nan_step_probability: 0.0
+2025-10-07 09:24:49,076: nan_sequence_probability: 0.0
+2025-10-07 09:24:49,076: nan_handling_pos_encoding_size: 0
+2025-10-07 09:24:49,077: number_of_basins: 1
+2025-10-07 09:24:49,104: ### Device cuda:0 will be used for training
+2025-10-07 09:24:49,105: Loading basin data into xarray data set.

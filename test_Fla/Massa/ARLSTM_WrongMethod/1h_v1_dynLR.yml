@@ -1,0 +1,146 @@
+# ================================================================
+# Template Configuration File by FK 
+# Delete or override values per project.
+# ================================================================
+
+# ------------------------------------------------
+# 1. Experiment setup
+# ------------------------------------------------
+experiment_name: "1h_30epochs_v1_dynLR"         # Name used for run folders/logs
+base_run_dir: ./runs           # Base directory for experiment runs
+run_dir: null                 # Custom run dir (overrides auto naming)
+train_dir: null                # Directory for saving training artifacts
+img_log_dir: null              # Directory for saving image logs
+
+seed: 42                     # Random seed (int)
+device: "cuda:0"                   # "cpu", "mps", or "cuda:X"
+num_workers: 16                # Data loader workers
+
+# ------------------------------------------------
+# 2. Data configuration
+# ------------------------------------------------
+data_dir: "../../../data/Massa"       # Path to dataset
+dataset:  "swisshourly"               # Dataset name # for example "swisshourly"
+
+train_basin_file:       "../data/basins.txt"      # File listing training basins
+validation_basin_file:  "../data/basins.txt"      # File listing validation basins
+test_basin_file:        "../data/basins.txt"      # File listing test basins
+
+train_start_date:       2016-01-03
+train_end_date:         2023-02-28   # last valid day of February
+validation_start_date:  2023-03-01
+validation_end_date:    2024-03-31
+test_start_date:        2024-04-01
+test_end_date:          2025-05-31                                      
+
+dynamic_inputs:                  # name of your features in the dataset
+- prec_bruchji
+- temp_binn
+- rad_visp
+dynamic_conceptual_inputs:
+- day
+
+# Target configuration
+target_variables: 
+  - streamflow
+clip_targets_to_zero:
+  - streamflow
+
+lagged_features:               # Lagged input features
+  streamflow: [1]
+
+# ------------------------------------------------
+# 3. Model configuration
+# ------------------------------------------------
+model: "arlstm"                    # Model type (e.g. "lstm", "transformer", "arlstm")
+head: "regression"                     # Head type for output e.g. "regression", "gmm", "cmal", "umal"
+hidden_size: 64              # Model hidden size (int or dict)
+
+output_activation: "linear"
+output_dropout: 0.15        #0.2–0.3 for multi-basin,  0.0–0.1 for single-basin
+
+# LSTM
+initial_forget_bias: 2.5                    # Initial bias value of the forget gate (0-3, high helps the model remember the past)
+
+# Embedding specifications (dicts)
+# define embedding network for dynamic inputs
+dynamics_embedding: null
+#   type: fc
+#   hiddens:                                # define number of neurons per layer in the FC network used as embedding network
+#     - 16
+#     - 32
+#     - 128
+#   activation: Relu                        # activation function of embedding network
+#   dropout: 0.0                            # dropout applied to embedding network
+
+statics_embedding: null
+
+# Auto-Regressive LSTM
+autoregressive_inputs:          # Must match lagged version of target
+  - streamflow_shift1       
+
+# ------------------------------------------------
+# 4. Training configuration
+# ------------------------------------------------
+epochs: 40
+max_updates_per_epoch: 50
+
+batch_size: 64
+optimizer: "Adam"             # specify optimizer [Adam]
+loss: MSE                     # specify loss [MSE, NSE, RMSE]
+
+# regularization:
+#   - ["l2", 1e-5]             # weight decay
+
+learning_rate:  1e-3           # specify learning rates to use starting at specific epochs (0 is the initial learning rate)
+  # 0: 1e-3
+  # 15: 5e-4
+  # 25: 1e-4
+
+clip_gradient_norm: 5.0           # avoids exploding gradients
+
+
+seq_length: 336                # Input sequence length (in frequency of measure -> if hourly: 168 is 2weeks, 8760 is a year)
+predict_last_n: 1            # Prediction horizon (will consider only the t0+predict_last_n*freq_measure point)
+
+metrics:
+- MAPE
+- NSE
+- MSE
+- RMSE
+
+# Early stopping / Dynamic learning rate
+validate_every: 1                     # specify after how many epochs to perform validation 
+validate_n_random_basins: 1
+
+# NEED validate_every set to 1
+early_stopping: true
+patience_early_stopping: 4
+minimum_epochs_before_early_stopping: 30
+dynamic_learning_rate: true
+patience_dynamic_learning_rate: 2
+factor_dynamic_learning_rate: 0.8
+
+# ------------------------------------------------
+# 5. Output & Logging
+# ------------------------------------------------
+log_interval: 10
+log_n_figures: 1
+log_tensorboard: true
+
+save_train_data: true
+save_validation_results: true
+save_all_output: false
+save_weights_every: 10
+
+save_git_diff: false
+verbose: 1                      # 0 = logs only, 1 = logs + progress
+
+# ------------------------------------------------
+# 6. Advanced options
+# ------------------------------------------------
+# Handling missing data
+nan_handling_method: masked_mean       # e.g. "mask", "zero"
+nan_step_probability: 0.0
+nan_sequence_probability: 0.0
+nan_handling_pos_encoding_size: 0

@@ -54,6 +54,7 @@ class BaseTrainer(object):
         self._max_updates_per_epoch = cfg.max_updates_per_epoch
         self._early_stopping = cfg.early_stopping
         self._patience_early_stopping = cfg.patience_early_stopping
+        self._min_delta_early_stopping = cfg.min_delta_early_stopping
         self._minimum_epochs_before_early_stopping = cfg.minimum_epochs_before_early_stopping
         self._dynamic_learning_rate = cfg.dynamic_learning_rate
         self._patience_dynamic_learning_rate = cfg.patience_dynamic_learning_rate
@@ -106,6 +107,7 @@ class BaseTrainer(object):
                           batch_size=self.cfg.batch_size,
                           shuffle=True,
                           num_workers=self.cfg.num_workers,
+                          persistent_workers=True,
                           collate_fn=ds.collate_fn)
 
     def _freeze_model_parts(self):
@@ -152,11 +154,14 @@ class BaseTrainer(object):
 
         # Initialize dataset before the model is loaded.
         ds = self._get_dataset()
+        # print(f"Dataset length: {len(ds)}")
         if len(ds) == 0:
             raise ValueError("Dataset contains no samples.")
         self.loader = self._get_data_loader(ds=ds)
-
+        # print("0000000000000000000")
+        print("model", self.model)
         self.model = self._get_model().to(self.device)
+        print("Model loaded")
         if self.cfg.checkpoint_path is not None:
             LOGGER.info(f"Starting training from Checkpoint {self.cfg.checkpoint_path}")
             self.model.load_state_dict(torch.load(str(self.cfg.checkpoint_path), map_location=self.device))
@@ -169,7 +174,7 @@ class BaseTrainer(object):
         # Freeze model parts from pre-trained model.
         if self.cfg.is_finetuning:
             self._freeze_model_parts()
-
+        
         self.optimizer = self._get_optimizer()
         self.loss_obj = self._get_loss_obj().to(self.device)
 
@@ -215,12 +220,14 @@ class BaseTrainer(object):
         if self._early_stopping:
             if self.cfg.is_continue_training:
                 LOGGER.warning("Early stopping state is reset.")   
-            early_stopper = EarlyStopper(patience = self._patience_early_stopping, min_delta = 0.0001)
+            early_stopper = EarlyStopper(patience = self._patience_early_stopping, min_delta = self._min_delta_early_stopping)
 
         if self._dynamic_learning_rate:
+            # print("using Dyn LR")
+            # print("============")
             if self.cfg.is_continue_training:
                 LOGGER.warning("Scheduler state is reset.")
-            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=self._factor_dynamic_learning_rate, patience=self._patience_dynamic_learning_rate)
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=self._factor_dynamic_learning_rate, patience=self._patience_dynamic_learning_rate, threshold=0.05, threshold_mode='rel', cooldown=5, min_lr=1e-7)
 
         for epoch in range(self._epoch + 1, self._epoch + self.cfg.epochs + 1):
             if not self._dynamic_learning_rate:
@@ -257,8 +264,14 @@ class BaseTrainer(object):
                     LOGGER.info(f"Early stopping triggered at epoch {epoch} with validation loss {valid_metrics['avg_total_loss']:.5f}. Training stopped.")
                     break
                 if self._dynamic_learning_rate:
+                    old_lr = scheduler.get_last_lr()[-1]
                     scheduler.step(valid_metrics['avg_total_loss'])
+                    new_lr = scheduler.get_last_lr()[-1]
 
+                    if old_lr !=  new_lr:
+                        LOGGER.info(f"[Scheduler] - Learning rate changed from {old_lr:.1e} to {new_lr:.1e}")
+
+                    
         # make sure to close tensorboard to avoid losing the last epoch
         if self.cfg.log_tensorboard:
             self.experiment_logger.stop_tb()
@@ -296,12 +309,13 @@ class BaseTrainer(object):
         torch.save(self.optimizer.state_dict(), str(optimizer_path))
 
     def _train_epoch(self, epoch: int):
+        # set model to training mode
         self.model.train()
         self.experiment_logger.train()
 
         # process bar handle
         n_iter = min(self._max_updates_per_epoch, len(self.loader)) if self._max_updates_per_epoch is not None else None
-        pbar = tqdm(self.loader, file=sys.stdout, disable=self._disable_pbar, total=n_iter)
+        pbar = tqdm(self.loader, file=sys.stdout, disable=self._disable_pbar, total=n_iter, leave=False)
         pbar.set_description(f'# Epoch {epoch}')
 
         # Iterate in batches over training set
@@ -309,25 +323,30 @@ class BaseTrainer(object):
         for i, data in enumerate(pbar):
             if self._max_updates_per_epoch is not None and i >= self._max_updates_per_epoch:
                 break
-
+            
+            # Loading data for the current batch
             for key in data.keys():
                 if key.startswith('x_d'):
                     data[key] = {k: v.to(self.device) for k, v in data[key].items()}
                 elif not key.startswith('date'):
                     data[key] = data[key].to(self.device)
-
+            
             # apply possible pre-processing to the batch before the forward pass
             data = self.model.pre_model_hook(data, is_train=True)
 
             # get predictions
             predictions = self.model(data)
-
+            
             if self.noise_sampler_y is not None:
                 for key in filter(lambda k: 'y' in k, data.keys()):
                     noise = self.noise_sampler_y.sample(data[key].shape)
                     # make sure we add near-zero noise to originally near-zero targets
                     data[key] += (data[key] + self._target_mean / self._target_std) * noise.to(self.device)
-
+            
+            # Zero your grandients for every batch
+            self.optimizer.zero_grad()
+            
+            # Calculate the loss
             loss, all_losses = self.loss_obj(predictions, data)
 
             # early stop training if loss is NaN
@@ -339,21 +358,19 @@ class BaseTrainer(object):
             else:
                 nan_count = 0
 
-                # delete old gradients
-                self.optimizer.zero_grad()
-
                 # get gradients
                 loss.backward()
 
                 if self.cfg.clip_gradient_norm is not None:
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.clip_gradient_norm)
 
-                # update weights
+                # Adjust learning weights
                 self.optimizer.step()
 
             pbar.set_postfix_str(f"Loss: {loss.item():.4f}")
 
             self.experiment_logger.log_step(**{k: v.item() for k, v in all_losses.items()})
+    
     def _set_random_seeds(self):
         if self.cfg.seed is None:
             self.cfg.seed = int(np.random.uniform(low=0, high=1e6))

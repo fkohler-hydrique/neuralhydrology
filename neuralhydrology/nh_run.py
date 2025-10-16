@@ -161,7 +161,6 @@ def eval_run(run_dir: Path, period: str, epoch: int = None, gpu: int = None):
     gpu : int, optional
         GPU id to use. Will override config argument 'device'. A value less than zero indicates CPU.
         Don't use this argument if you want to use the device as specified in the config file e.g. MPS.
-
     """
     config = Config(run_dir / "config.yml")
 

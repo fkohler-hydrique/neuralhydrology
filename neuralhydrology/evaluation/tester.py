@@ -205,7 +205,7 @@ class BaseTester(object):
         results = defaultdict(dict)
         all_output = {basin: None for basin in basins}
 
-        pbar = tqdm(basins, file=sys.stdout, disable=self._disable_pbar)
+        pbar = tqdm(basins, file=sys.stdout, disable=self._disable_pbar, leave=False)
         pbar.set_description('# Validation' if self.period == "validation" else "# Evaluation")
 
         for basin in pbar:
@@ -243,11 +243,12 @@ class BaseTester(object):
                     continue  # this frequency is not being predicted
                 results[basin][freq] = {}
 
-                # rescale observations
+                # rescale observations (undo standardization — this yields log(Q + offset) if log-transform used)
                 feature_scaler = self.scaler["xarray_feature_scale"][self.cfg.target_variables].to_array().values
                 feature_center = self.scaler["xarray_feature_center"][self.cfg.target_variables].to_array().values
                 y_freq = y[freq] * feature_scaler + feature_center
-                # rescale predictions
+
+                # rescale predictions (same shape handling as before)
                 if y_hat[freq].ndim == 3 or (len(feature_scaler) == 1):
                     y_hat_freq = y_hat[freq] * feature_scaler + feature_center
                 elif y_hat[freq].ndim == 4:
@@ -257,6 +258,44 @@ class BaseTester(object):
                     y_hat_freq = y_hat[freq] * feature_scaler + feature_center
                 else:
                     raise RuntimeError(f"Simulations have {y_hat[freq].ndim} dimension. Only 3 and 4 are supported.")
+
+                # Diagnostics before any inverse-transforms
+                # try:
+                #     LOGGER.info(
+                #         f"[Tester] Before inverse-transform ({freq}): "
+                #         f"y_hat range = [{np.nanmin(y_hat_freq):.4f}, {np.nanmax(y_hat_freq):.4f}], "
+                #         f"mean = {np.nanmean(y_hat_freq):.4f}, std = {np.nanstd(y_hat_freq):.4f}"
+                #     )
+                # except Exception:
+                #     # defensive: if shapes unexpected, do not crash on logging
+                #     LOGGER.debug("[Tester] Could not compute basic stats for y_hat_freq (unexpected shape).")
+
+                # --- Inverse normalization for log-transformed targets variables ---
+                if hasattr(self.cfg, "target_normalization"):
+                    for var in self.cfg.target_variables:
+                        norm_params = self.cfg.target_normalization.get(var, {})
+                        transform = norm_params.get("transform", "center").lower()
+                        log_offset = float(norm_params.get("log_offset", 0.0))
+
+                        # Only handle 'log' here — other options are left unchanged (already unstandardized above)
+                        if transform == "log":
+                            # y_freq and y_hat_freq can be 3D arrays: [samples, time_steps, variables]
+                            var_idx = self.cfg.target_variables.index(var)
+
+                            # Now apply exponential once (because we already un-standardized above)
+                            # y_freq and y_hat_freq hold log(Q + offset) -> invert with exp() - offset
+                            y_freq[..., var_idx] = np.exp(y_freq[..., var_idx]) - log_offset
+                            y_hat_freq[..., var_idx] = np.exp(y_hat_freq[..., var_idx]) - log_offset
+
+                            # Log post-transform stats
+                            # try:
+                            #     LOGGER.info(
+                            #         f"[Tester] After inverse-transform '{var}': sim range = [{np.nanmin(y_hat_freq[..., var_idx]):.4f}, "
+                            #         f"{np.nanmax(y_hat_freq[..., var_idx]):.4f}], mean = {np.nanmean(y_hat_freq[..., var_idx]):.4f}"
+                            #     )
+                            # except Exception:
+                            #     LOGGER.debug(f"[Tester] Could not compute post-exp stats for '{var}'.")
+
 
                 # Create data_vars dictionary for the xarray.Dataset
                 data_vars = self._create_xarray_data_vars(y_hat_freq, y_freq)
@@ -290,10 +329,10 @@ class BaseTester(object):
                 mask[:-predict_last_n[freq]] = False
                 freq_date_range = freq_date_range[np.tile(mask, len(xr['date']))]
 
-                # only warn once per freq
-                if frequency_factor < predict_last_n[freq] and basin == basins[0]:
-                    tqdm.write(f'Metrics for {freq} are calculated over last {frequency_factor} elements only. '
-                               f'Ignoring {predict_last_n[freq] - frequency_factor} predictions per sequence.')
+                # only warn once per freq 
+                # if frequency_factor < predict_last_n[freq] and basin == basins[0]:
+                    # tqdm.write(f'Metrics for {freq} are calculated over last {frequency_factor} elements only. '
+                    #            f'Ignoring {predict_last_n[freq] - frequency_factor} predictions per sequence.')
 
                 if metrics:
                     for target_variable in self.cfg.target_variables:

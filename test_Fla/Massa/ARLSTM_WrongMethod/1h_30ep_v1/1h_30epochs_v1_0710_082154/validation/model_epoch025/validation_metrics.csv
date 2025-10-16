@@ -1,0 +1,3 @@
+basin,MAPE,NSE,MSE,RMSE
+massa,"<xarray.DataArray ()> Size: 4B
+array(21.934664, dtype=float32)",0.9896302223205566,5.736299991607666,2.3950574088333805

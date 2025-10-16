@@ -22,7 +22,7 @@ def get_available_metrics() -> List[str]:
     """
     metrics = [
         "NSE", "MSE", "RMSE", "KGE", "Alpha-NSE", "Pearson-r", "Beta-KGE", "Beta-NSE", "FHV", "FMS", "FLV",
-        "Peak-Timing", "Missed-Peaks", "Peak-MAPE"
+        "Peak-Timing", "Missed-Peaks", "Peak-MAPE", "MAPE"
     ]
     return metrics
 
@@ -144,7 +144,7 @@ def rmse(obs: DataArray, sim: DataArray) -> float:
 
     """
 
-    return np.sqrt(mse(obs, sim))
+    return float(np.sqrt(mse(obs, sim)))
 
 
 def alpha_nse(obs: DataArray, sim: DataArray) -> float:
@@ -755,6 +755,32 @@ def mean_absolute_percentage_peak_error(obs: DataArray, sim: DataArray) -> float
     return peak_mape
 
 
+def mape(observations: DataArray, predictions: DataArray) -> float:
+    """Mean Absolute Percentage Error (MAPE).
+
+    Args:
+        predictions: torch.Tensor, model predictions
+        observations: torch.Tensor, ground truth observations
+
+    Returns:
+        torch.Tensor: MAPE values (same dimensions as inputs, reduced later in evaluation)
+    """
+
+    # verify inputs
+    _validate_inputs(observations, predictions)
+
+    # get time series with only valid observations
+    observations, predictions = _mask_valid(observations, predictions)
+
+
+    # Avoid division by zero by adding a small epsilon
+    epsilon = 1e-6
+
+    abs_percentage_error = np.abs((observations - predictions) / (observations + epsilon))
+
+    return float(np.mean(abs_percentage_error) * 100.0)
+
+
 def calculate_all_metrics(obs: DataArray,
                           sim: DataArray,
                           resolution: str = "1D",
@@ -797,7 +823,8 @@ def calculate_all_metrics(obs: DataArray,
         "FMS": fdc_fms(obs, sim),
         "FLV": fdc_flv(obs, sim),
         "Peak-Timing": mean_peak_timing(obs, sim, resolution=resolution, datetime_coord=datetime_coord),
-        "Peak-MAPE": mean_absolute_percentage_peak_error(obs, sim)
+        "Peak-MAPE": mean_absolute_percentage_peak_error(obs, sim),
+        "MAPE" : mape(obs, sim)
     }
 
     return results
@@ -868,6 +895,8 @@ def calculate_metrics(obs: DataArray,
             values["Missed-Peaks"] = missed_peaks(obs, sim, resolution=resolution, datetime_coord=datetime_coord)
         elif metric.lower() == "peak-mape":
             values["Peak-MAPE"] = mean_absolute_percentage_peak_error(obs, sim)
+        elif metric.lower() == "mape":
+            values["MAPE"] = mape(obs, sim)
         else:
             raise RuntimeError(f"Unknown metric {metric}")
 

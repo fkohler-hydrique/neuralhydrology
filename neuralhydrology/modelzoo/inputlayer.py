@@ -68,12 +68,18 @@ class InputLayer(nn.Module):
                 self._dynamic_inputs = [dynamic_inputs]
             else:
                 self._dynamic_inputs = dynamic_inputs
+
+            # print(self._dynamic_inputs)
             if cfg.timestep_counter:
                 # Add timestep counter to each feature group.
                 if self.embedding_type == 'hindcast':
                     self._dynamic_inputs = [group + ['hindcast_counter'] for group in self._dynamic_inputs]
                 elif self.embedding_type == 'forecast':
-                    self._dynamic_inputs += [group + ['forecast_counter'] for group in self._dynamic_inputs]
+                    # ici il y avait un += ca régale merci au codeur
+                    self._dynamic_inputs = [group + ['forecast_counter'] for group in self._dynamic_inputs]
+                    # print("forecast counter added")
+                    # print(self._dynamic_inputs)
+
             self.nan_handling_method = cfg.nan_handling_method
             self.attention = None
             self._nan_fill_value = 0.0
@@ -82,9 +88,11 @@ class InputLayer(nn.Module):
                 dynamics_input_sizes = [sum(len(group) + 1
                                             for group in self._dynamic_inputs) + cfg.nan_handling_pos_encoding_size]
             elif self.nan_handling_method in ['masked_mean', 'attention']:
+                # print("masked nan")
                 dynamics_input_sizes = [len(group) + (cfg.nan_handling_pos_encoding_size
                                                         if self.nan_handling_method != 'attention' else 0)
                                         for group in self._dynamic_inputs]
+                # print(dynamics_input_sizes)
             else:
                 dynamics_input_sizes = [len(group) for group in self._dynamic_inputs]
 
@@ -97,6 +105,7 @@ class InputLayer(nn.Module):
 
         self._num_autoregression_inputs = 0
         if cfg.autoregressive_inputs:
+            print("tu es AR toi ?")
             self._num_autoregression_inputs = len(cfg.autoregressive_inputs)
 
         statics_input_size = len(cfg.static_attributes + cfg.hydroatlas_attributes + cfg.evolving_attributes)

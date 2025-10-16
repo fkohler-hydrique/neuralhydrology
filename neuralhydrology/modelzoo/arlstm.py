@@ -16,7 +16,7 @@ from neuralhydrology.utils.config import Config
 class ARLSTM(BaseModel):
     """An autoregressive LSTM.
 
-    This model assumes that the *last* entry in dynamic inpus (x_d) is an observation that is supposed to match
+    This model assumes that the *last* entry in dynamic inputs (x_d) is an observation that is supposed to match
     target data lagged by an integer number of timesteps. If this data is missing (NaN), it is substituted 
     for the model prediction at the same lag. The model adds an extra dynamic input that serves as a binary 
     flag to indicate whether the autoregressive input at a particular timestep is from observation vs. simulation.
@@ -112,6 +112,7 @@ class ARLSTM(BaseModel):
         y_hat = []
 
         # manually loop through timesteps
+        h_0, c_0 = h_0.detach(), c_0.detach()
         for x_t in x_d:
 
             # find locations of missing data (NaN's) and replace with last predictions
@@ -123,7 +124,7 @@ class ARLSTM(BaseModel):
             ar_flags[replace_indexes] = 1
 
             # one timestep of lstm
-            cell_inputs = torch.unsqueeze(torch.concat([x_embd, x_ar, ar_flags], -1), 0)
+            cell_inputs = torch.unsqueeze(torch.cat([x_embd, x_ar, ar_flags], -1), 0)
             cell_output, (h_0, c_0) = self.cell(cell_inputs, (h_0, c_0))
 
             # append all timestep output to the output dictionary
@@ -137,7 +138,7 @@ class ARLSTM(BaseModel):
 
         # stack all ouptuts to sizes in function doc
         pred = {
-            'lstm_output': torch.concat(lstm_output, 1), 
+            'lstm_output': torch.cat(lstm_output, 1), 
             'h_n': h_0.transpose(0, 1), 
             'c_n': c_0.transpose(0, 1),
             'y_hat': torch.stack(y_hat, 1),

@@ -159,3 +159,52 @@ class ForecastOverlapMSERegularization(BaseRegularization):
             forecast = other_model_output['y_forecast_overlap'][key]
             loss += torch.mean((hindcast - forecast)**2)
         return loss
+
+
+
+class L2Regularization(BaseRegularization):
+    """L2 regularization (weight decay) applied to model parameters.
+
+    Skips biases and normalization parameters (common practice in modern deep learning).
+    """
+
+    def __init__(self, cfg: Config, weight: float = 1.0):
+        super(L2Regularization, self).__init__(cfg, name='l2', weight=weight)
+
+    def forward(self, prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor],
+                other_model_data: Dict[str, torch.Tensor]) -> torch.Tensor:
+        """Compute L2 penalty.
+
+        Parameters
+        ----------
+        prediction : Dict[str, torch.Tensor]
+            Not used.
+        ground_truth : Dict[str, torch.Tensor]
+            Not used.
+        other_model_data : Dict[str, torch.Tensor]
+            Must contain a key ``'model'`` with the full model instance.
+
+        Returns
+        -------
+        torch.Tensor
+            Weighted L2 penalty term.
+        """
+        if 'model' not in other_model_data:
+            raise ValueError("L2Regularization requires 'model' in other_model_data.")
+
+        model = other_model_data['model']
+        l2_loss = torch.tensor(0.0, device=next(model.parameters()).device)
+
+        for name, param in model.named_parameters():
+            if not param.requires_grad:
+                continue
+
+            # Skip biases and normalization parameters
+            if name.endswith(".bias"):
+                continue
+            if "norm" in name.lower():
+                continue
+
+            l2_loss += torch.sum(param ** 2)
+
+        return self.weight * l2_loss
