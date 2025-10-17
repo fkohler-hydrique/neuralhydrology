@@ -31,7 +31,7 @@ class SequentialForecastLSTM(BaseModel):
     ValueError if forecast and hindcast embedding nets have different output sizes.
     """
     # specify submodules of the model that can later be used for finetuning. Names must match class attributes
-    module_parts = ['hindcast_embedding_net', 'forecast_embedding_net', 'lstm', 'head']
+    module_parts = ['hindcast_embedding_net', 'forecast_embedding_net', 'lstm', 'lstm2', 'dropout', 'head']
 
     def __init__(self, cfg: Config):
         super(SequentialForecastLSTM, self).__init__(cfg=cfg)
@@ -55,7 +55,10 @@ class SequentialForecastLSTM(BaseModel):
             input_size=self.forecast_embedding_net.output_size,
             hidden_size=cfg.hidden_size
         )
-
+        self.lstm2 = nn.LSTM(
+            input_size=self.forecast_embedding_net.output_size,
+            hidden_size=cfg.hidden_size
+        )
         self.dropout = nn.Dropout(p=cfg.output_dropout)
 
         self.head = get_head(cfg=cfg, n_in=cfg.hidden_size, n_out=self.output_size)
@@ -90,7 +93,7 @@ class SequentialForecastLSTM(BaseModel):
         # possibly pass dynamic and static inputs through embedding layers, then concatenate them
         x_h = self.hindcast_embedding_net(data)
         x_f = self.forecast_embedding_net(data)
-
+        # print("after embedding in forward seq lstm")
         # run hindcast part of the lstm
         lstm_output_hindcast, (h_n_hindcast, c_n_hindcast) = self.lstm(input=x_h)
         lstm_output_hindcast = lstm_output_hindcast.transpose(0, 1)
@@ -102,7 +105,7 @@ class SequentialForecastLSTM(BaseModel):
         # run head
         concatenated_predictions = torch.cat([lstm_output_hindcast, lstm_output_forecast], dim=1)
         pred = self.head(self.dropout(concatenated_predictions))
-
+        # print("before reshape in forward seq lstm")
         # reshape to [batch_size, seq, n_hiddens]
         h_n_hindcast = h_n_hindcast.transpose(0, 1)
         c_n_hindcast = c_n_hindcast.transpose(0, 1)

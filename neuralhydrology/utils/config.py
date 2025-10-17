@@ -483,7 +483,8 @@ class Config(object):
     def hindcast_inputs_flattened(self) -> list[str]:
         hindcast_inputs = self.hindcast_inputs
         if hindcast_inputs and isinstance(hindcast_inputs[0], list):
-            return list(itertools.chain.from_iterable(hindcast_inputs))
+            # if self._cfg.get("timestep_counter", False):
+            return list(itertools.chain.from_iterable(hindcast_inputs+[['timestep_counter']]))
         else:
             return hindcast_inputs
 

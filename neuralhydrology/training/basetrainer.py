@@ -158,10 +158,8 @@ class BaseTrainer(object):
         if len(ds) == 0:
             raise ValueError("Dataset contains no samples.")
         self.loader = self._get_data_loader(ds=ds)
-        # print("0000000000000000000")
-        print("model", self.model)
         self.model = self._get_model().to(self.device)
-        print("Model loaded")
+        # print("Model loaded")
         if self.cfg.checkpoint_path is not None:
             LOGGER.info(f"Starting training from Checkpoint {self.cfg.checkpoint_path}")
             self.model.load_state_dict(torch.load(str(self.cfg.checkpoint_path), map_location=self.device))
@@ -315,7 +313,7 @@ class BaseTrainer(object):
 
         # process bar handle
         n_iter = min(self._max_updates_per_epoch, len(self.loader)) if self._max_updates_per_epoch is not None else None
-        pbar = tqdm(self.loader, file=sys.stdout, disable=self._disable_pbar, total=n_iter, leave=False)
+        pbar = tqdm(self.loader, file=sys.stdout, disable=self._disable_pbar, total=n_iter, leave=False) #, file=sys.stdout
         pbar.set_description(f'# Epoch {epoch}')
 
         # Iterate in batches over training set
@@ -323,20 +321,21 @@ class BaseTrainer(object):
         for i, data in enumerate(pbar):
             if self._max_updates_per_epoch is not None and i >= self._max_updates_per_epoch:
                 break
-            
+            # print("data keys in trainer: ", data.keys())
+            # print("data x_d keys in trainer: ", data['x_d'].keys())
+            # print("data x_d_hindcast keys in trainer: ", data['x_d_hindcast'].keys())
+
             # Loading data for the current batch
             for key in data.keys():
                 if key.startswith('x_d'):
                     data[key] = {k: v.to(self.device) for k, v in data[key].items()}
                 elif not key.startswith('date'):
                     data[key] = data[key].to(self.device)
-            
+            # print("after loading in the trainer")
             # apply possible pre-processing to the batch before the forward pass
             data = self.model.pre_model_hook(data, is_train=True)
-
             # get predictions
             predictions = self.model(data)
-            
             if self.noise_sampler_y is not None:
                 for key in filter(lambda k: 'y' in k, data.keys()):
                     noise = self.noise_sampler_y.sample(data[key].shape)

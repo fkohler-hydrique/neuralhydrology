@@ -167,6 +167,8 @@ class BaseDataset(Dataset):
             sample[x_d_key] = {}
             sample[f'{x_d_key}_hindcast'] = {}
             sample[f'{x_d_key}_forecast'] = {}
+            # print("hindcast_inputs_flattened ", self.cfg.hindcast_inputs_flattened)
+            # print("forecast_inputs_flattened ", self.cfg.forecast_inputs_flattened)
             for k, v in self._x_d[basin][freq].items():
                 if k in self.cfg.hindcast_inputs_flattened:
                     sample[f'{x_d_key}_hindcast'][k] = v[hindcast_start_idx:hindcast_end_idx]
@@ -197,8 +199,8 @@ class BaseDataset(Dataset):
                 sample[f'x_s{freq_suffix}'] = torch.cat(static_inputs, dim=-1)
 
             if self.cfg.timestep_counter:
-                sample[f'x_d{freq_suffix}']['hindcast_counter'] = self.hindcast_counter
-                sample[f'x_d{freq_suffix}']['forecast_counter'] = self.forecast_counter
+                sample[f'x_d_hindcast{freq_suffix}']['hindcast_counter'] = self.hindcast_counter
+                sample[f'x_d_forecast{freq_suffix}']['forecast_counter'] = self.forecast_counter
 
         if self._per_basin_target_stds:
             sample['per_basin_target_stds'] = self._per_basin_target_stds[basin]
@@ -359,12 +361,11 @@ class BaseDataset(Dataset):
             keep_cols = list(sorted(set(keep_cols)))
             if not self._disable_pbar:
                 LOGGER.info("Loading basin data into xarray data set.")
-            for basin in tqdm(self.basins, disable=self._disable_pbar, file=sys.stdout, leave=False):
+            for basin in tqdm(self.basins, file=sys.stdout, disable=self._disable_pbar,  leave=False): #file=sys.stdout,
                 df = self._load_basin_data(basin)
-
                 # print("Basin data loaded !")
                 if self.cfg.target_normalization is not None:
-                    print("checkpoint 1")
+                    # print("checkpoint 1")
                     # print("Applying target normalization")
                     for target in self.cfg.target_variables:
                         if self.cfg.target_normalization['streamflow']['transform'] == "log":
@@ -374,7 +375,7 @@ class BaseDataset(Dataset):
                 # add columns from dataframes passed as additional data files
                 df = pd.concat([df, *[d[basin] for d in self.additional_features]], axis=1)
 
-                print("checkpoint 2")
+                # print("checkpoint 2")
                 # if target variables are missing for basin, add empty column to still allow predictions to be made
                 if not self.is_train:
                     df = self._add_missing_targets(df)
@@ -537,7 +538,7 @@ class BaseDataset(Dataset):
             if not self.frequencies:
                 native_frequency = utils.infer_frequency(xr["date"].values)
                 self.frequencies = [native_frequency]
-        print("Xarray dataset loaded or created !")
+        # print("Xarray dataset loaded or created !")
         return xr
 
     def _save_xarray_dataset(self, xr: xarray.Dataset):
@@ -555,7 +556,7 @@ class BaseDataset(Dataset):
         if not self._disable_pbar:
             LOGGER.info("Calculating target variable stds per basin")
         nan_basins = []
-        for basin in tqdm(self.basins, file=sys.stdout, disable=self._disable_pbar):
+        for basin in tqdm(self.basins, file=sys.stdout, disable=self._disable_pbar, leave=False):
 
             obs = xr.sel(basin=basin)[self.cfg.target_variables].to_array().values
             if np.sum(~np.isnan(obs)) > 1:
@@ -784,8 +785,9 @@ class BaseDataset(Dataset):
             # get feature-wise center and scale values for the feature normalization
             self._setup_normalization(xr)
 
+
         # performs normalization
-        xr = (xr - self.scaler["xarray_feature_center"]) / self.scaler["xarray_feature_scale"]
+        xr = (xr - self.scaler["xarray_feature_center"]) / (self.scaler["xarray_feature_scale"]+ 1e-9)
 
         self._create_lookup_table(xr)
         # print("Load_data and Create_lookup_table OK !")
@@ -819,7 +821,7 @@ class BaseDataset(Dataset):
                         self.scaler["xarray_feature_scale"][feature] = np.float32(1.0)
                     elif val == "minmax":
                         self.scaler["xarray_feature_scale"][feature] = xr[feature].max(skipna=True) - \
-                                                                       xr[feature].min(skipna=True)
+                                                                       (xr[feature].min(skipna=True)+1e-9)
                     elif val == "std":
                         # Do nothing, since this is the default
                         pass

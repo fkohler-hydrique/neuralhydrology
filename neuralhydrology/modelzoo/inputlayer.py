@@ -74,6 +74,8 @@ class InputLayer(nn.Module):
                 # Add timestep counter to each feature group.
                 if self.embedding_type == 'hindcast':
                     self._dynamic_inputs = [group + ['hindcast_counter'] for group in self._dynamic_inputs]
+                    # print("hindcast embedding")
+                    # print(self._dynamic_inputs)
                 elif self.embedding_type == 'forecast':
                     # ici il y avait un += ca régale merci au codeur
                     self._dynamic_inputs = [group + ['forecast_counter'] for group in self._dynamic_inputs]
@@ -105,7 +107,6 @@ class InputLayer(nn.Module):
 
         self._num_autoregression_inputs = 0
         if cfg.autoregressive_inputs:
-            print("tu es AR toi ?")
             self._num_autoregression_inputs = len(cfg.autoregressive_inputs)
 
         statics_input_size = len(cfg.static_attributes + cfg.hydroatlas_attributes + cfg.evolving_attributes)
@@ -218,7 +219,6 @@ class InputLayer(nn.Module):
         features = self._dynamic_inputs
         if isinstance(features, dict):
             features = features[list(features.keys())[0]]
-
         if 'x_s' in data and 'x_one_hot' in data:
             x_s = torch.cat([data['x_s'], data['x_one_hot']], dim=-1)
         elif 'x_s' in data:
@@ -227,12 +227,18 @@ class InputLayer(nn.Module):
             x_s = data['x_one_hot']
         else:
             x_s = None
+        # print("after 1st if cond in input layer")
 
         statics_out = None
         if x_s is not None:
             statics_out = self.statics_embedding(x_s)
+    
+        # print("before handling nan in input layer")
 
         if self.nan_handling_method == 'masked_mean':
+            # print("trying to handle nan with masked mean")
+            # print("x_d_key= ", self._x_d_key)
+            # print("data[x_d_key]= ", data[self._x_d_key])
             dynamics_out = self._masked_mean_embedding(data[self._x_d_key])
         elif self.nan_handling_method == 'attention':
             dynamics_out = self._attention(data[self._x_d_key], statics_embedding=statics_out)
@@ -242,7 +248,7 @@ class InputLayer(nn.Module):
             # transpose to [seq_length, batch_size, n_features]
             x_d = torch.cat([data[self._x_d_key][k] for k in itertools.chain(*features)], dim=-1).transpose(0, 1)
             dynamics_out = self.dynamics_embeddings[0](x_d)
-
+        # print("after handling nan in input layer")
         if not concatenate_output:
             ret_val = dynamics_out, statics_out
         else:
@@ -310,9 +316,14 @@ class InputLayer(nn.Module):
         """Performs masked mean embedding on the input data."""
         dynamics_out = []
         masks = []
+        # print(self._dynamic_inputs)
         for idx, feature_group in enumerate(self._dynamic_inputs):
             # transpose to [seq_length, batch_size, n_features]
             x_d_group = torch.cat([x_d[k] for k in feature_group], dim=-1).transpose(0, 1)
+            # print("x_d_group shape: ", x_d_group.shape)
+            # print("x_d_group: ", x_d_group)
+            # print("feature_group: ", feature_group)
+
             mask = x_d_group.isnan().any(dim=-1, keepdim=True)
             if self._pos_enc is not None:
                 x_d_group = self._pos_enc(x_d_group)

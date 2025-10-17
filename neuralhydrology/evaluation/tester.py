@@ -271,7 +271,8 @@ class BaseTester(object):
                 #     LOGGER.debug("[Tester] Could not compute basic stats for y_hat_freq (unexpected shape).")
 
                 # --- Inverse normalization for log-transformed targets variables ---
-                if hasattr(self.cfg, "target_normalization"):
+                if self.cfg.target_normalization is not None:
+                    # print("Applying inverse normalization for log-transformed target variables ...")
                     for var in self.cfg.target_variables:
                         norm_params = self.cfg.target_normalization.get(var, {})
                         transform = norm_params.get("transform", "center").lower()

@@ -1,0 +1,148 @@
+# ================================================================
+# NeuralHydrology Config - Fixed Version
+# ================================================================
+
+# ------------------------------------------------
+# 1. Experiment setup
+# ------------------------------------------------
+experiment_name: "M0"
+base_run_dir: ./runs
+train_dir: null
+img_log_dir: null
+
+seed: 42
+device: "cuda:0"
+num_workers: 16
+
+# ------------------------------------------------
+# 2. Data configuration
+# ------------------------------------------------
+train_basin_file: "../../data/basins.txt"
+validation_basin_file: "../../data/basins.txt"
+test_basin_file: "../../data/basins.txt"
+
+train_start_date: 2020-01-03
+train_end_date: 2023-02-28
+validation_start_date: 2023-03-01
+validation_end_date: 2024-03-31
+test_start_date: 2024-04-01
+test_end_date: 2025-05-31
+
+
+data:
+  data_dir: "../../data"
+  dataset: "swisshourly"
+  dynamic_inputs:
+    - streamflow
+    - prec_bruchji
+    - temp_binn
+    - ray_visp
+    - degree_day
+    - is_snow
+    - forecast_prec_bruchji
+    - forecast_temp_binn
+    - null_values
+  hindcast_inputs:
+    - streamflow
+    - prec_bruchji
+    - temp_binn
+    - ray_visp
+    - degree_day
+    - is_snow
+  forecast_inputs:
+    - null_values
+    - forecast_prec_bruchji
+    - forecast_temp_binn
+    - ray_visp
+    - degree_day
+    - is_snow
+
+  # Moved normalization here
+  normalize_inputs: true
+  normalize_targets: true
+  normalization_type: minmax
+
+  target_variables:
+    - streamflow
+
+
+
+
+
+seq_length: 360
+forecast_seq_length: 24
+predict_last_n: 24
+
+clip_targets_to_zero:
+  - streamflow
+
+# ------------------------------------------------
+# 3. Model configuration
+# ------------------------------------------------
+model:
+  model: "sequential_forecast_lstm"
+  head: "regression"
+  hidden_size: 128
+  output_activation: "linear"
+  output_dropout: 0.2
+  initial_forget_bias: 2.5
+
+  hindcast_embedding:
+    type: mlp
+    hidden_size: 64
+    dropout: 0.1
+
+  forecast_embedding:
+    type: mlp
+    hidden_size: 64
+    dropout: 0.1
+
+# ------------------------------------------------
+# 4. Training configuration
+# ------------------------------------------------
+epochs: 1000
+max_updates_per_epoch: null
+
+batch_size: 128
+optimizer: "AdamW"
+loss: MSE
+learning_rate: 1e-3
+clip_gradient_norm: 3.0
+
+metrics:
+  - MAPE
+  - NSE
+  - MSE
+  - RMSE
+
+validate_every: 1
+validate_n_random_basins: 1
+early_stopping: true
+patience_early_stopping: 10
+minimum_epochs_before_early_stopping: 20
+min_delta_early_stopping: 1e-6
+
+dynamic_learning_rate: true
+patience_dynamic_learning_rate: 5
+factor_dynamic_learning_rate: 0.3
+
+# ------------------------------------------------
+# 5. Output & Logging
+# ------------------------------------------------
+log_interval: 10
+log_n_figures: 1
+log_tensorboard: true
+save_train_data: false
+save_validation_results: false
+save_all_output: false
+save_weights_every: 10
+save_git_diff: false
+verbose: 1
+
+# ------------------------------------------------
+# 6. Advanced options
+# ------------------------------------------------
+nan_handling_method: masked_mean
+nan_step_probability: 0.0
+nan_sequence_probability: 0.0
+nan_handling_pos_encoding_size: 0

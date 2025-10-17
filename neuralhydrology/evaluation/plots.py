@@ -69,9 +69,8 @@ def regression_plot(y: np.ndarray,
 
     fig, ax = plt.subplots()
 
-    ax.plot(y.flatten(), label="observed", lw=1)
-    ax.plot(y_hat.flatten(), label="simulated", alpha=.8, lw=1)
-
+    ax.plot(y.flatten(), label="observed", lw=0.5, color='#FB1414')
+    ax.plot(y_hat.flatten(), label="simulated", alpha=.8, lw=0.5, color="#4169E1")
     box = ax.get_position()
     ax.set_position([box.x0, box.y0 + box.height * 0.1, box.width, box.height * 0.9])
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.08), ncol=2)
