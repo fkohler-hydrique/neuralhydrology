@@ -192,6 +192,145 @@ class MaskedMSELoss(BaseLoss):
         loss = 0.5 * torch.mean((prediction['y_hat'][mask] - ground_truth['y'][mask])**2)
         return loss
 
+class MaskedMAPELoss(BaseLoss):
+    """Mean Absolute Percentage Error (MAPE) loss.
+    
+    To use this loss in a forward pass, the passed `prediction` dict must contain
+    the key ``y_hat``, and the `data` dict must contain ``y``.
+
+    Parameters
+    ----------
+    cfg : Config
+        The run configuration.
+    """
+
+    def __init__(self, cfg: Config):
+        super(MaskedMAPELoss, self).__init__(cfg, prediction_keys=['y_hat'], ground_truth_keys=['y'])
+
+    def _get_loss(self, prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor], **kwargs):
+        y_true = ground_truth['y']
+        y_pred = prediction['y_hat']
+
+        # Create a mask to ignore NaNs in ground truth
+        mask = ~torch.isnan(y_true)
+        y_true = y_true[mask]
+        y_pred = y_pred[mask]
+
+        # Avoid division by zero (add a small epsilon)
+        epsilon = 1e-6
+        loss = torch.mean(torch.abs((y_true - y_pred) / (y_true + epsilon))) * 100.0  # in percentage
+
+        return loss
+
+
+class MaskedSMAPELoss(BaseLoss):
+    """Symmetric Mean Absolute Percentage Error (SMAPE) loss.
+    
+    To use this loss in a forward pass, the passed `prediction` dict must contain
+    the key ``y_hat``, and the `data` dict must contain ``y``.
+
+    Parameters
+    ----------
+    cfg : Config
+        The run configuration.
+    """
+
+    def __init__(self, cfg: Config):
+        super(MaskedSMAPELoss, self).__init__(cfg, prediction_keys=['y_hat'], ground_truth_keys=['y'])
+
+    def _get_loss(self, prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor], **kwargs):
+        y_true = ground_truth['y']
+        y_pred = prediction['y_hat']
+
+        mask = ~torch.isnan(y_true)
+        y_true = y_true[mask]
+        y_pred = y_pred[mask]
+
+        epsilon = 1e-8
+        numerator = torch.abs(y_true - y_pred)
+        denominator = (torch.abs(y_true) + torch.abs(y_pred)) / 2.0 + epsilon
+        loss = 100.0 * torch.mean(numerator / denominator)
+
+        return loss
+
+class CombinedLoss(BaseLoss):
+    """Combine multiple BaseLoss instances with specified weights."""
+    
+    def __init__(self, cfg, losses_list_str: List[str], weights: List[float] = None):
+        # translate loss names to loss instances
+        losses = []
+        for loss_name in losses_list_str:
+            if loss_name.lower() == 'mse':
+                losses.append(MaskedMSELoss(cfg))
+            elif loss_name.lower() == 'nse':
+                losses.append(MaskedNSELoss(cfg))
+            elif loss_name.lower() == 'smape':
+                losses.append(MaskedSMAPELoss(cfg))
+            elif loss_name.lower() == 'mape':
+                losses.append(MaskedMAPELoss(cfg))
+            else:
+                raise ValueError(f"Loss '{loss_name}' is not recognized for CombinedLoss.")
+
+        self.losses = losses
+
+        if weights is None:
+            self.weights = [1.0 / len(losses) for _ in losses]
+        else:
+            if len(weights) != len(losses):
+                raise ValueError("Number of weights must match number of losses")
+            self.weights = weights
+
+        # # Initialize with keys and additional data from the first loss (used for forward)
+        # super().__init__(cfg,
+        #                  prediction_keys=losses[0]._prediction_keys,
+        #                  ground_truth_keys=losses[0]._ground_truth_keys,
+        #                  additional_data=losses[0]._additional_data)
+        # second version, where forward calls each loss and combines them:
+        pred_keys = []
+        ground_truth_keys = []
+        additional_data = []
+        for loss_obj in losses:
+            # extend lists with keys from each loss object (some losses may have empty additional_data)
+            pred_keys.extend(getattr(loss_obj, '_prediction_keys', []) or [])
+            ground_truth_keys.extend(getattr(loss_obj, '_ground_truth_keys', []) or [])
+            additional_data.extend(getattr(loss_obj, '_additional_data', []) or [])
+
+        # helper to deduplicate while preserving order
+        def _unique(seq):
+            seen = set()
+            out = []
+            for x in seq:
+                if x not in seen:
+                    seen.add(x)
+                    out.append(x)
+            return out
+
+        prediction_key = _unique(pred_keys)
+        ground_truth_key = _unique(ground_truth_keys)
+        additional_data = _unique(additional_data)
+        
+        # weights already stored above; keep as attribute for later use
+        # initialize BaseLoss with the combined key lists
+        super().__init__(cfg,
+                         prediction_keys=prediction_key,
+                         ground_truth_keys=ground_truth_key,
+                         additional_data=additional_data)
+        
+
+
+    def _get_loss(self, prediction, ground_truth, **kwargs):
+        # Patch missing key if NSE is used
+        if 'per_basin_target_stds' not in kwargs:
+            # Create a dummy tensor matching prediction['y_hat'] shape
+            example_tensor = next(iter(prediction.values()))
+            kwargs['per_basin_target_stds'] = torch.ones_like(example_tensor)
+
+        combined = 0.0
+        for loss_obj, w in zip(self.losses, self.weights):
+            loss_kwargs = {k: v for k, v in kwargs.items() if k in loss_obj._additional_data}
+            combined += w * loss_obj._get_loss(prediction, ground_truth, **loss_kwargs)
+        return combined
+
 
 class MaskedRMSELoss(BaseLoss):
     """Root mean squared error loss.

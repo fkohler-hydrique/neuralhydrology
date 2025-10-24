@@ -311,6 +311,10 @@ class Config(object):
     @property
     def custom_normalization(self) -> dict:
         return self._as_default_dict(self._cfg.get("custom_normalization", {}))
+
+    @property
+    def custom_loss(self) -> dict:
+        return self._as_default_dict(self._cfg.get("custom_loss", {}))
     
     @property
     def target_normalization(self) -> dict:
@@ -980,6 +984,12 @@ class Config(object):
         if self.dynamic_learning_rate:
             return self._get_value_verbose("factor_dynamic_learning_rate")
     
+    @property
+    def num_layers(self) -> int:
+        """Number of layers in LSTM-based models."""
+        return self._cfg.get("num_layers", 1)
+        
+
     def _get_embedding_spec(self, embedding_spec: dict) -> dict:
         if isinstance(embedding_spec, bool) and embedding_spec:  #
             msg = [

@@ -1,0 +1,19 @@
+Goal: from previous score of MAPE=12-14 to a mape inferior to 10
+
+After a training of a lstm hindcast/forecast model to a mape around 13, some optimizations are attempted in order to decrease this metric and have a solid model to predict a +24h horizon.
+
+Leads:
+- embedding of the dyn. features
+- transformations on the target features
+- Rolling features
+- features selection
+- model params (n_layer, with/without dropout)
+
+
+
+
+
+
+
+Some tries failed in improving the model in the folder M_1
+- new DB, stations chosen "wisely", with rolling features.

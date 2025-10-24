@@ -31,8 +31,8 @@ class SequentialForecastLSTM(BaseModel):
     ValueError if forecast and hindcast embedding nets have different output sizes.
     """
     # specify submodules of the model that can later be used for finetuning. Names must match class attributes
-    module_parts = ['hindcast_embedding_net', 'forecast_embedding_net', 'lstm', 'lstm2', 'dropout', 'head']
-
+    module_parts = ['hindcast_embedding_net', 'forecast_embedding_net', 'lstm', 'head']
+# , 'lstm2'
     def __init__(self, cfg: Config):
         super(SequentialForecastLSTM, self).__init__(cfg=cfg)
 
@@ -53,13 +53,10 @@ class SequentialForecastLSTM(BaseModel):
 
         self.lstm = nn.LSTM(
             input_size=self.forecast_embedding_net.output_size,
-            hidden_size=cfg.hidden_size
+            hidden_size=cfg.hidden_size,
+            num_layers=cfg.num_layers,
+            dropout=cfg.output_dropout
         )
-        self.lstm2 = nn.LSTM(
-            input_size=self.forecast_embedding_net.output_size,
-            hidden_size=cfg.hidden_size
-        )
-        self.dropout = nn.Dropout(p=cfg.output_dropout)
 
         self.head = get_head(cfg=cfg, n_in=cfg.hidden_size, n_out=self.output_size)
 
@@ -104,7 +101,8 @@ class SequentialForecastLSTM(BaseModel):
 
         # run head
         concatenated_predictions = torch.cat([lstm_output_hindcast, lstm_output_forecast], dim=1)
-        pred = self.head(self.dropout(concatenated_predictions))
+        # here the dropout was with the output of the lstm, wrong according to what i read.
+        pred = self.head(concatenated_predictions)
         # print("before reshape in forward seq lstm")
         # reshape to [batch_size, seq, n_hiddens]
         h_n_hindcast = h_n_hindcast.transpose(0, 1)

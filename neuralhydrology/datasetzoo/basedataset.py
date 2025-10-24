@@ -777,9 +777,9 @@ class BaseDataset(Dataset):
 
         xr = self._load_or_create_xarray_dataset()
 
-        if self.cfg.loss.lower() in ['nse', 'weightednse']:
+        # if self.cfg.loss.lower() in ['nse', 'weightednse', 'custom_loss']:
             # get the std of the discharge for each basin, which is needed for the (weighted) NSE loss.
-            self._calculate_per_basin_std(xr)
+        self._calculate_per_basin_std(xr)
 
         if self._compute_scaler:
             # get feature-wise center and scale values for the feature normalization

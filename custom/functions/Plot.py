@@ -1,6 +1,57 @@
 import numpy as np
 import plotly.graph_objects as go
 import matplotlib.pyplot as plt
+from typing import List
+import pandas as pd
+from matplotlib import cm
+
+def get_n_colors(n: int) -> List[str]:
+    """Return a list of `n` visually distinct, plot-friendly hex colors.
+
+    Characteristics:
+    - Avoids pure yellow and obvious fluorescent greens.
+    - Returns hex color strings (e.g. "#2a9d8f").
+    - If n is larger than the curated palette, colors are repeated by
+      cycling through the palette (keeps consistency and visibility).
+
+    Args:
+        n: number of colors requested (n >= 0).
+
+    Returns:
+        list of hex color strings of length n.
+    """
+
+    if n <= 0:
+        return []
+
+    # Curated palette (no yellow or neon/fluo greens). These are
+    # chosen to be distinct and visible on light/dark backgrounds.
+    palette = [
+        "#3850D8",  # deep cyan/teal
+        "#b53bda",  # purple
+        "#f37805",  # orange (not yellow)
+        "#22baec",  # sky blue
+        "#b5179e",  # magenta
+        "#2a9d8f",  # teal (non-fluorescent)
+        "#EEAAC4",  # very dark blue
+        "#6e4b96",  # maroon
+        "#0077b6",  # medium blue
+        "#264653",  # slate
+        "#8ecae6",  # light blue
+        "#6a4c93",  # violet
+        "#fb8500",  # darker orange
+        "#2b2d42",  # near-black blue
+        "#5a189a",  # deep purple
+        "#ff6b6b",  # coral
+        "#e63946",  # strong red
+        "#d62828",  # deep red
+        "#ef476f",  # pink
+        "#4cc9f0",  # bright sky blue
+    ]
+
+    # If we need more colors than in the palette, cycle through it.
+    colors = [palette[i % len(palette)] for i in range(n)]
+    return colors
 
 def plot_hydrograph(
     qobs,
@@ -123,7 +174,7 @@ def plot_hydrograph(
 
 def plot_training_curves(train_df, val_df):
     """Plot loss and validation metrics."""
-    plt.figure(figsize=(10, 5))
+    plt.figure(figsize=(6, 3))
     plt.semilogy(train_df["epoch"], train_df["avg_total_loss"], label="Training Loss", lw=2)
     plt.semilogy(val_df["epoch"], val_df["avg_val_loss"], 'o--', label="Validation Loss", lw=2)
     plt.xlabel("Epoch")
@@ -138,7 +189,7 @@ def plot_training_curves(train_df, val_df):
 def plot_validation_metrics(val_df):
     """Plot validation metrics like NSE, RMSE, etc."""
     metrics = ["MAPE", "NSE", "MSE", "RMSE"]
-    fig, axs = plt.subplots(2, 2, figsize=(12, 8))
+    fig, axs = plt.subplots(2, 2, figsize=(8, 5))
     axs = axs.ravel()
 
     for i, m in enumerate(metrics):
@@ -156,18 +207,19 @@ def plot_validation_metrics(val_df):
 # --------------------
 
 
-import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
 
 def plot_forecast_24h(
-    xr_ds,
-    mode="last",             # "mean", "quantiles", or "spaghetti"
+    xr_ds=None,
+    mode="list",             # "mean", "quantiles", or "spaghetti"
     quantiles=(0.1, 0.9),    # only used in quantiles mode
     var_obs="streamflow_obs",
     var_sim="streamflow_sim",
     title="24h Rolling Forecast vs Observed",
-    int_horizon=0
+    horizons=[24],
+    width: int = 1000,
+    height: int = 500,
+    measured = None,
+    predicted=None
 ):
     """
     Plot 24h horizon forecasts issued hourly from an AR-LSTM model.
@@ -191,111 +243,65 @@ def plot_forecast_24h(
     """
 
     # Convert to pandas
-    obs_df = xr_ds[var_obs].to_pandas()
-    sim_df = xr_ds[var_sim].to_pandas()
+    if (measured is not None) and (predicted is not None):
+        obs_df = measured.to_pandas()
+        sim_df = predicted.to_pandas()
+    else:
+        obs_df = xr_ds[var_obs].to_pandas()
+        sim_df = xr_ds[var_sim].to_pandas()
 
-    # Build forecast issue/horizon timestamps
-    all_forecasts = []
-    for issue_time, row in sim_df.iterrows():
-        for h, val in enumerate(row.values):
-            horizon = int(xr_ds["time_step"].values[h])
-            # convert to absolute time
-            abs_time = pd.Timestamp(issue_time) + pd.Timedelta(hours=horizon)
-            all_forecasts.append((abs_time, issue_time, val))
-    df_forecasts = pd.DataFrame(all_forecasts, columns=["abs_time", "issue_time", "forecast"])
-    df_forecasts.sort_values("abs_time", inplace=True)
+    horizon_len = len(obs_df.columns)
+    # Combine the two observed segments into a single trace so only one legend entry appears.
+    # First segment: full-series shifted left by the horizon length (start of each forecast)
+    x1 = obs_df.index - pd.Timedelta(hours=horizon_len-1)
+    y1 = obs_df.iloc[:, 0].values
 
-    # Flatten observed data
-    obs_series = obs_df.stack().reset_index(level=1, drop=True)
-    obs_series.index = pd.to_datetime(obs_series.index)
+    # Second segment: the last `horizon_len` timestamps using the last column (end of each horizon)
+    x2 = obs_df[-horizon_len:].index
+    y2 = obs_df.iloc[-horizon_len:, -1].values
+
+    # Build a single Series, concatenate and sort by time to produce a continuous trace
+    s1 = pd.Series(y1, index=pd.to_datetime(x1))
+    s2 = pd.Series(y2, index=pd.to_datetime(x2))
+    obs_combined = pd.concat([s1, s2]).sort_index()
+    obs_combined = obs_combined[~obs_combined.index.duplicated(keep="first")]
 
     # Build Plotly figure
     fig = go.Figure()
 
-    # Observed line
     fig.add_trace(
         go.Scatter(
-            x=obs_df.index,
-            y=obs_df[0],
+            x=obs_combined.index,
+            y=obs_combined.values,
             mode="lines",
             name="Observed Flow",
-            line=dict(color="crimson", width=3),
+            line=dict(color="crimson", width=2),
         )
     )
-
+    
     if mode == "spaghetti":
         # Plot every forecast trajectory
-        for issue_time, group in df_forecasts.groupby("issue_time"):
+        print("not yet implemented")
+    elif mode == "mean":
+        print("not yet implemented")
+    elif mode == "quantiles":
+        print("not yet implemented")
+    elif mode == "one":
+        print("not yet implemented")
+    elif mode == "list":
+        # print(sim_df.iloc[:, 25-1].values)
+        colors = get_n_colors(len(horizons))
+        # note: index 0 means t+24h, -23 means t+1h
+        for color, hor in zip(colors,horizons):
             fig.add_trace(
                 go.Scatter(
-                    x=group["abs_time"],
-                    y=group["forecast"],
+                    x=sim_df.index-pd.Timedelta(hours=(horizon_len-hor)),
+                    y=sim_df.iloc[:, hor-1].values,
                     mode="lines",
-                    line=dict(color="royalblue", width=0.7),
-                    opacity=0.3,
-                    name="Forecast" if issue_time == df_forecasts["issue_time"].iloc[0] else None,
-                    showlegend=(issue_time == df_forecasts["issue_time"].iloc[0]),
+                    name=f"Simulated Flow | +{hor}h",
+                    line=dict(color=color, width=1.5)
                 )
             )
-
-    elif mode == "mean":
-        df_mean = df_forecasts.groupby("abs_time")["forecast"].mean()
-        fig.add_trace(
-            go.Scatter(
-                x=df_mean.index,
-                y=df_mean.values,
-                mode="lines",
-                name="Forecast mean",
-                line=dict(color="royalblue", width=2),
-            )
-        )
-
-    elif mode == "quantiles":
-        q_low, q_high = quantiles
-        df_q = (
-            df_forecasts.groupby("abs_time")["forecast"]
-            .quantile([q_low, 0.5, q_high])
-            .unstack(level=1)
-            .rename(columns={q_low: "low", 0.5: "median", q_high: "high"})
-        )
-
-        # Build the filled fan (convert index to Series for concat)
-        x_vals = pd.concat([pd.Series(df_q.index), pd.Series(df_q.index[::-1])])
-        y_vals = pd.concat([df_q["high"], df_q["low"][::-1]])
-
-        fig.add_trace(
-            go.Scatter(
-                x=x_vals,
-                y=y_vals,
-                fill="toself",
-                fillcolor="rgba(65,105,225,0.2)",
-                line=dict(color="rgba(255,255,255,0)"),
-                hoverinfo="skip",
-                name=f"Forecast {int(q_low*100)}–{int(q_high*100)}%",
-            )
-        )
-        # Median line
-        fig.add_trace(
-            go.Scatter(
-                x=df_q.index,
-                y=df_q["median"],
-                mode="lines",
-                name="Forecast median",
-                line=dict(color="royalblue", width=2),
-            )
-        )
-    elif mode == "one":
-        # display the last prediction of the horizon (t+24h)
-        fig.add_trace(
-            go.Scatter(
-                x=sim_df.index,
-                y=sim_df[int_horizon],
-                mode="lines",
-                name=f"Simulated Flow",
-                line=dict(color="royalblue", width=3),
-                marker=dict(size=6),
-            )
-        )
     elif mode == "last":
         # display the last prediction of the horizon (t+24h)
         fig.add_trace(
@@ -304,12 +310,11 @@ def plot_forecast_24h(
                 y=sim_df[0],
                 mode="lines",
                 name=f"Simulated Flow",
-                line=dict(color="royalblue", width=3),
-                marker=dict(size=6),
+                line=dict(color="royalblue", width=1.5)
             )
         )
     else:
-        raise ValueError("mode must be one of: 'mean', 'quantiles', or 'spaghetti'")
+        raise ValueError("unknown mode detected")
 
     fig.update_layout(
         title=title,
@@ -318,9 +323,16 @@ def plot_forecast_24h(
         template="plotly_white",
         hovermode="x unified",
         legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
+        width=width,
+        height=height,
+        margin=dict(l=50, r=30, t=80, b=50)
     )
 
-    return fig
+    # --- Zoom range slider ---
+    fig.update_xaxes(rangeslider_visible=True)
+
+    # --- Show ---
+    fig.show()
 
 # ==========================================
 
@@ -329,11 +341,13 @@ import plotly.graph_objects as go
 
 
 def plot_forecast_horizon_24h(
-    xr_ds,
     issue_date,
+    xr_ds=None,
     var_obs="streamflow_obs",
     var_sim="streamflow_sim",
     title=None,
+    measured = None,
+    predicted=None
 ):
     """
     Plot a single 24-hour forecast horizon (spaghetti view) for a given issue date.
@@ -533,4 +547,79 @@ def plot_forecast_horizon_series(
     return fig
 
 
+
+
+
+def plot_mape_horizon(mapes, horizons=None, color="#2a9d8f", figsize=(10, 5),
+                      marker="o", linestyle="-", title=None, xlabel="Forecast Horizon (hours)",
+                      ylabel="MAPE (%)", annotate=True, show=True):
+    """
+    Nicely formatted plot of MAPE vs forecast horizon.
+    Tries to use a nicer matplotlib style but falls back if not available.
+
+    Parameters
+    - mapes: array-like of MAPE values (one per horizon)
+    - horizons: array-like of horizon indices. If None, will be 1..len(mapes)
+    - color: main color for line and fill
+    - figsize: figure size tuple
+    - marker, linestyle: marker and line style for the series
+    - title: plot title (if None, a generic title is used)
+    - xlabel, ylabel: axis labels
+    - annotate: annotate mean value on the plot
+    - show: whether to call plt.show()
+    Returns: (fig, ax)
+    """
+    # try a nicer style but fall back to a safe default
+    try:
+        plt.style.use("seaborn-whitegrid")
+    except Exception:
+        plt.style.use("ggplot")
+
+    mapes_arr = np.asarray(mapes)
+    if horizons is None:
+        horizons = np.arange(1, len(mapes_arr) + 1)
+    else:
+        horizons = np.asarray(horizons)
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Line + markers
+    ax.plot(horizons, mapes_arr, color=color, marker=marker, linestyle=linestyle,
+            linewidth=2, markersize=6, label="MAPE")
+
+    # Soft filled area under the curve down to zero
+    ax.fill_between(horizons, mapes_arr, 0, color=color, alpha=0.10)
+
+    # Mean line (dashed)
+    mean_val = mapes_arr.mean()
+    ax.axhline(mean_val, color="gray", linestyle="--", linewidth=1.5, label=f"Mean = {mean_val:.2f}%")
+
+    # Tidy axis, ticks and limits
+    ax.set_xticks(horizons)
+    ymin = mapes_arr.min() * 0.9
+    ymax = mapes_arr.max() * 1.12
+    ax.set_ylim(ymin, ymax)
+
+    # Labels and title
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    if title is None:
+        title = "MAPE vs Forecast Horizon"
+    ax.set_title(title, fontsize=12, pad=10)
+
+    # Grid and legend
+    ax.grid(alpha=0.25)
+    ax.legend(frameon=True, edgecolor="0.85")
+
+    # Annotate last point and mean
+    if annotate and len(horizons) > 0:
+        ax.scatter(horizons[-1], mapes_arr[-1], s=70, facecolors="white", edgecolors=color, zorder=5)
+        ax.text(horizons[-1] + 0.3, mapes_arr[-1], f"{mapes_arr[-1]:.2f}%", va="center", ha="left", fontsize=9)
+        # place mean label near right side
+        ax.text(horizons[-1] + 0.3, mean_val, f"Mean: {mean_val:.2f}%", va="center", ha="left", fontsize=9, color="gray")
+
+    plt.tight_layout()
+    if show:
+        plt.show()
+    # return fig, ax
 #===================

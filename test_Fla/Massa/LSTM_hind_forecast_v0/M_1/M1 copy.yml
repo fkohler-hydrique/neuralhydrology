@@ -6,7 +6,7 @@
 # ------------------------------------------------
 # 1. Experiment setup
 # ------------------------------------------------
-experiment_name: "M0"         # Name used for run folders/logs
+experiment_name: "m1"         # Name used for run folders/logs
 base_run_dir: ./runs           # Base directory for experiment runs
 # run_dir: "24h_30ep_v1"                   # Custom run dir (overrides auto naming)
 train_dir: null                # Directory for saving training artifacts
@@ -22,70 +22,91 @@ num_workers: 16                # Data loader workers
 data_dir: "../../data"       # Path to dataset
 dataset:  "swisshourly"               # Dataset name # for example "swisshourly"
 
-train_basin_file:       "../../data/basins.txt"      # File listing training basins
-validation_basin_file:  "../../data/basins.txt"      # File listing validation basins
-test_basin_file:        "../../data/basins.txt"      # File listing test basins
+train_basin_file:       "../../data/basins_1.txt"      # File listing training basins
+validation_basin_file:  "../../data/basins_1.txt"      # File listing validation basins
+test_basin_file:        "../../data/basins_1.txt"      # File listing test basins
 
 train_start_date:       2020-01-03   # first valid day of January
-train_end_date:         2023-02-28   # last valid day of February
-validation_start_date:  2023-03-01
-validation_end_date:    2024-03-31
-test_start_date:        2024-04-01
-test_end_date:          2025-05-31                                      
+train_end_date:         2024-02-28   # last valid day of February
+validation_start_date:  2024-03-01
+validation_end_date:    2025-03-31
+# test_start_date:        2024-04-01
+# test_end_date:          2025-05-29                                      
+
+
+
 
 dynamic_inputs:                  # name of your features in the dataset
-- prec_bruchji
-- degree_day
-- is_snow
-- forecast_prec_bruchji	
-- forecast_temp_binn	
-- temp_binn	
-- ray_visp	
-- daylight	
-- hr																
-- null_values
 - streamflow_hindcast
-# - prec_visp	
-# - temp_visp	
-# - forecast_prec_visp	
-# - forecast_temp_visp	
-# - mean_f_prec
-# - mean_f_temp
-# - mean_temp            
-# - mean_prec
-# - forecast_prec_binn	
-# - prec_binn	
+- null_values
+- bruchji_prec
+- blatten_prec
+- blatten_temp
+- eggishorn_temp
+- eggishorn_ray
+- bruchji_prec_6h
+- eggishorn_degreeday
+- blatten_prec_6h
+- fc_bruchji_prec
+- fc_blatten_prec
+- fc_blatten_temp
+- fc_eggishorn_temp
+- fc_bruchji_prec_6h
+- fc_blatten_prec_6h
+- fc_eggishorn_degreeday
+- hr 
+- mo
+- is_snow_melting
+- fc_is_snow_melting
+- eggishorn_temp_6h
+- eggishorn_ray_6h
+- fc_eggishorn_temp_6h
+- blatten_ray
+- blatten_temp_6h
+- blatten_ray_6h
+- fc_blatten_temp_6h
+
 
 # hindcasting/Forecasting inputs:
 hindcast_inputs:           # (optional) features used during hindcast phase
-- degree_day
-- is_snow
-- ray_visp
-- prec_bruchji
-- temp_binn	
 - streamflow_hindcast
-- daylight	
+- bruchji_prec
+- blatten_prec
+- blatten_temp
+- eggishorn_temp
+- eggishorn_ray
+- bruchji_prec_6h
+- blatten_prec_6h
+- eggishorn_degreeday
 - hr
+- mo
+- eggishorn_temp_6h
+- eggishorn_ray_6h
+- is_snow_melting
+- blatten_ray
+- blatten_temp_6h
+- blatten_ray_6h
 
 
-# mean_temp	mean_temp >0	degree_day	is_snow	mean_prec	mean_f_prec	mean_f_temp
 
-# - ray_visp	
 forecast_inputs:              # (optional) features used during forecast phase
-- forecast_prec_bruchji	
-- forecast_temp_binn	
-- degree_day
-- is_snow
-- ray_visp
 - null_values
-- daylight	
+- fc_bruchji_prec
+- fc_blatten_prec
+- fc_blatten_temp
+- fc_eggishorn_temp
+- eggishorn_ray
+- fc_bruchji_prec_6h
+- fc_blatten_prec_6h
+- fc_eggishorn_degreeday
 - hr
-
-# - forecast_prec_binn	
-# - mean_f_prec
-# - forecast_prec_visp	
-# - mean_f_temp
-# - forecast_temp_visp	
+- mo
+- fc_eggishorn_temp_6h
+- eggishorn_ray_6h
+- fc_is_snow_melting
+- blatten_ray
+- fc_blatten_temp_6h
+- blatten_ray_6h
 
 
 forecast_seq_length: 24       # Must be < seq_length
@@ -107,7 +128,7 @@ timestep_counter: true          # adds a feature that counts the time step in th
 
 # Target configuration
 target_variables: 
-  - streamflow
+  - streamflow 
 clip_targets_to_zero:
   - streamflow
 
@@ -125,11 +146,12 @@ clip_targets_to_zero:
 #     log_offset: 0.01         # offset for log
 #     center: "mean"           # 'mean'|'median'|'none'
 #     scale: "minmax"             # 'std'|'minmax'|'none'
-  # streamflow_hindcast:
-  #   transform: "log"         # 'log' | 'none'
-  #   log_offset: 0.01         # offset for log
-  #   center: "mean"           # 'mean'|'median'|'none'
-  #   scale: "std"             # 'std'|'minmax'|'none'
+#   streamflow_hindcast:
+#     transform: "log"         # 'log' | 'none'
+#     log_offset: 0.01         # offset for log
+#     center: "mean"           # 'mean'|'median'|'none'
+#     scale: "std"             # 'std'|'minmax'|'none'
+
 # Whether to save transformed target/predictions additionally
 # save_transformed_targets: false
 # 
@@ -141,23 +163,22 @@ clip_targets_to_zero:
 # ------------------------------------------------
 model: "sequential_forecast_lstm"                    # Model type (e.g. "lstm", "transformer", "arlstm")
 head: "regression"                     # Head type for output e.g. "regression", "gmm", "cmal", "umal"
-hidden_size: 128              # Model hidden size (int or dict)
+hidden_size: 256              # Model hidden size (int or dict)
 
 output_activation: "linear"
 output_dropout: 0.1            #0.2–0.3 for multi-basin,  0.0–0.1 for single-basin
 
 # LSTM
-initial_forget_bias: 2                    # Initial bias value of the forget gate (0-3, high helps the model remember the past)
+initial_forget_bias: 1.5                    # Initial bias value of the forget gate (0-3, high helps the model remember the past)
 
 # Embedding specifications (dicts)
 # define embedding network for dynamic inputs
-dynamics_embedding:
+dynamics_embedding: 
   type: fc
   hiddens:                                # define number of neurons per layer in the FC network used as embedding network
-    - 16
     - 32
-    # - 128
-  activation: Relu                        # activation function of embedding network
+    - 64
+  activation: tanh                        # activation function of embedding network
   dropout: 0.0                            # dropout applied to embedding network
 
 # statics_embedding: null
@@ -174,16 +195,17 @@ max_updates_per_epoch: null   # Limits number of training updates per epoch (for
 
 batch_size: 64
 optimizer: "AdamW"             # specify optimizer [Adam. AdamW]
-loss: SMAPE                     # specify loss [MSE, NSE, RMSE]
+loss: custom_loss                     # specify loss [MSE, NSE, RMSE]
+# custom_loss
 
 # regularization:
 #   - ["l2", 1e-5]             # weight decay
 
 learning_rate:  1e-3         # specify learning rates to use starting at specific epochs (0 is the initial learning rate)
-clip_gradient_norm: 3.0           # avoids exploding gradients
+clip_gradient_norm: 5.0           # avoids exploding gradients
 
 
-seq_length: 150  # 2 weeks of context, predict last day of sequence               # Input sequence length (in frequency of measure -> if hourly: 168 is 2weeks, 8760 is a year)
+seq_length: 720  # 2 weeks of context, predict last day of sequence               # Input sequence length (in frequency of measure -> if hourly: 168 is 2weeks, 8760 is a year)
 predict_last_n: 24            # Prediction horizon (will consider only the t0+predict_last_n*freq_measure point)
 
 metrics:
@@ -198,8 +220,8 @@ validate_n_random_basins: 1
 
 # NEED validate_every set to 1
 early_stopping: true
-patience_early_stopping: 10
-minimum_epochs_before_early_stopping: 20
+patience_early_stopping: 20
+minimum_epochs_before_early_stopping: 10
 min_delta_early_stopping: 5e-7
 # Dynamic LR
 dynamic_learning_rate: true

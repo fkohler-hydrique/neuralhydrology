@@ -37,6 +37,10 @@ def get_optimizer(model: torch.nn.Module, cfg: Config) -> torch.optim.Optimizer:
 
     return optimizer
 
+def get_custom_loss(cfg):
+    combined = loss.CombinedLoss(cfg, losses_list_str=cfg.custom_loss['losses'], weights=cfg.custom_loss['weights'])
+    return combined
+
 
 def get_loss_obj(cfg: Config) -> loss.BaseLoss:
     """Get loss object, depending on the run configuration.
@@ -69,10 +73,18 @@ def get_loss_obj(cfg: Config) -> loss.BaseLoss:
         loss_obj = loss.MaskedCMALLoss(cfg)
     elif cfg.loss.lower() == "umalloss":
         loss_obj = loss.MaskedUMALLoss(cfg)
+    elif cfg.loss.lower() == "custom_loss":
+        loss_obj = get_custom_loss(cfg)
+    elif cfg.loss.lower() == "mape":
+        loss_obj =loss.MaskedMAPELoss(cfg)
+    elif cfg.loss.lower() == "smape":
+        loss_obj =loss.MaskedSMAPELoss(cfg)
     else:
         raise NotImplementedError(f"{cfg.loss} not implemented or not linked in `get_loss()`")
 
     return loss_obj
+
+
 
 
 def get_regularization_obj(cfg: Config) -> List[regularization.BaseRegularization]:

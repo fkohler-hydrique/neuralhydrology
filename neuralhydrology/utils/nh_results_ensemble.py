@@ -124,7 +124,7 @@ def _create_ensemble(results_files: List[Path], frequencies: List[str], config: 
                 # clip predictions to zero
                 sim = ensemble_xr[f'{target_var}_sim']
                 if target_var in config.clip_targets_to_zero:
-                    sim = xr.where(sim < 0, 0, sim)
+                    sim = xr.where(sim < 0, 1e-5, sim)
 
                 # calculate metrics
                 metrics = config.metrics if isinstance(config.metrics, list) else config.metrics[target_var]

@@ -337,6 +337,7 @@ class BaseTester(object):
 
                 if metrics:
                     for target_variable in self.cfg.target_variables:
+                        # print(f"Calculating metrics for basin {basin}, variable {target_variable}, frequency {freq}...")
                         # stack dates and time_steps so we don't just evaluate every 24h when use_frequencies=[1D, 1h]
                         obs = xr.isel(time_step=slice(-frequency_factor, None)) \
                             .stack(datetime=['date', 'time_step']) \
@@ -351,7 +352,7 @@ class BaseTester(object):
 
                             # clip negative predictions to zero, if variable is listed in config 'clip_target_to_zero'
                             if target_variable in self.cfg.clip_targets_to_zero:
-                                sim = xarray.where(sim < 0, 0, sim)
+                                sim = xarray.where(sim < 0, 1e-5, sim)
 
                             if 'samples' in sim.dims:
                                 sim = sim.mean(dim='samples')
@@ -413,7 +414,7 @@ class BaseTester(object):
                     sim = xr[f"{target_var}_sim"].values
                     # clip negative predictions to zero, if variable is listed in config 'clip_target_to_zero'
                     if target_var in self.cfg.clip_targets_to_zero:
-                        sim = xarray.where(sim < 0, 0, sim)
+                        sim = xarray.where(sim < 0, 1e-5, sim)
                     figures.append(
                         self._get_plots(
                             obs, sim, title=f"{target_var} - Basin {basins[i]} - Epoch {epoch} - Frequency {freq}")[0])

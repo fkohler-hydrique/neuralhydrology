@@ -763,7 +763,7 @@ def mape(observations: DataArray, predictions: DataArray) -> float:
         observations: torch.Tensor, ground truth observations
 
     Returns:
-        torch.Tensor: MAPE values (same dimensions as inputs, reduced later in evaluation)
+        float: MAPE values
     """
 
     # verify inputs
@@ -774,11 +774,13 @@ def mape(observations: DataArray, predictions: DataArray) -> float:
 
 
     # Avoid division by zero by adding a small epsilon
-    epsilon = 1e-6
+    # epsilon = 1e-6
+    EPS = 1e-6
+    mape = np.mean(np.abs((observations - predictions) / np.clip(np.abs(observations), EPS, None))) * 100
+    # abs_percentage_error = np.abs((observations - predictions) / (observations + epsilon))
 
-    abs_percentage_error = np.abs((observations - predictions) / (observations + epsilon))
-
-    return float(np.mean(abs_percentage_error) * 100.0)
+    # return float(np.mean(abs_percentage_error) * 100.0)
+    return float(mape)
 
 
 def calculate_all_metrics(obs: DataArray,
