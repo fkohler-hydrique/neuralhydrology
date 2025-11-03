@@ -174,31 +174,44 @@ def plot_hydrograph(
 
 def plot_training_curves(train_df, val_df):
     """Plot loss and validation metrics."""
-    plt.figure(figsize=(6, 3))
-    plt.semilogy(train_df["epoch"], train_df["avg_total_loss"], label="Training Loss", lw=2)
-    plt.semilogy(val_df["epoch"], val_df["avg_val_loss"], 'o--', label="Validation Loss", lw=2)
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
+    fig, ax1 = plt.subplots(figsize=(6, 3))
+
+    c1 = "#1e3a7a"
+    c2 = "#dc6b2b"
+
+    ax1.set_xlabel("Epoch")
+    ax1.set_ylabel("Training Loss", color=c1)
+    ax1.plot(train_df["epoch"], train_df["avg_total_loss"], label="Training Loss", lw=2, color=c1)
+    ax1.tick_params(axis='y', labelcolor=c1)
+    
+    ax2 = ax1.twinx()  # instantiate a second Axes that shares the same x-axis
+    ax2.set_ylabel("Validation Loss", color=c2)
+    ax2.plot(val_df["epoch"], val_df["avg_val_loss"], label="Validation Loss", lw=2, color=c2)
+    ax2.tick_params(axis='y', labelcolor=c2)
+    
+
     plt.title("Training vs Validation Loss")
-    plt.grid(True, linestyle="--", alpha=0.5)
-    plt.legend()
+    plt.box()
+    plt.grid(alpha=0.5)
+    fig.tight_layout()
     plt.show()
 
-# -------------------------
+
 
 def plot_validation_metrics(val_df):
     """Plot validation metrics like NSE, RMSE, etc."""
+    c = "#50c878"
     metrics = ["MAPE", "NSE", "MSE", "RMSE"]
     fig, axs = plt.subplots(2, 2, figsize=(8, 5))
     axs = axs.ravel()
 
     for i, m in enumerate(metrics):
         if m in val_df.columns:
-            axs[i].plot(val_df["epoch"], val_df[m], marker='o', lw=2)
+            axs[i].plot(val_df["epoch"], val_df[m], lw=2, color=c)
             axs[i].set_title(m)
             axs[i].set_xlabel("Epoch")
             axs[i].set_ylabel(m)
-            axs[i].grid(True, linestyle="--", alpha=0.5)
+            axs[i].grid(alpha=0.5)
 
     fig.suptitle("Validation Metrics over Epochs", fontsize=14)
     plt.tight_layout()
