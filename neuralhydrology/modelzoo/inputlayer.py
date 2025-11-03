@@ -358,7 +358,7 @@ class InputLayer(nn.Module):
         # required for dict-like access when freezing submodules' gradients in fine-tuning
         if item == "statics_embedding":
             return self.statics_embedding
-        elif item == "dynamics_embedding":
+        elif item == "dynamics_embeddings":
             return self.dynamics_embedding
         else:
             raise KeyError(f"Cannot access {item} on InputLayer")

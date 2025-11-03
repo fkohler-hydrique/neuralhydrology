@@ -319,6 +319,14 @@ class Config(object):
     @property
     def target_normalization(self) -> dict:
         return self._cfg.get("target_normalization", None)
+    
+    @property
+    def save_best_enabled(self) -> bool:
+        return self._cfg.get("save_best_enabled", True)
+    
+    @property
+    def save_best_criterion(self) -> str:
+        return self._cfg.get("save_best_criterion", "sum_metrics")
 
     @property
     def save_transformed_targets(self) -> dict:
@@ -948,13 +956,13 @@ class Config(object):
     def patience_early_stopping(self) -> int:
         """Number of epochs with no improvement before stopping."""
         if self.early_stopping:
-            return self._get_value_verbose("patience_early_stopping")
+            return self._cfg.get("patience_early_stopping", 20)
         
     @property
     def min_delta_early_stopping(self) -> int:
         """Minimum change in the monitored metric to qualify as an improvement."""
         if self.early_stopping:
-            return self._cfg.get("min_delta_early_stopping", 0.00005)
+            return self._cfg.get("min_delta_early_stopping", 1e-7)
     @property
     def minimum_epochs_before_early_stopping(self) -> int:
         """Minimum number of epochs before early stopping can be triggered."""

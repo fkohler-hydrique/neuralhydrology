@@ -26,6 +26,7 @@ class BaseModel(nn.Module):
     def __init__(self, cfg: Config):
         super(BaseModel, self).__init__()
         self.cfg = cfg
+        # print("Output size of the head", len(cfg.target_variables))
         self.output_size = len(cfg.target_variables)
         if cfg.head.lower() == 'gmm':
             self.output_size *= 3 * cfg.n_distributions

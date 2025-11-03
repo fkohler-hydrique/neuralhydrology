@@ -26,6 +26,20 @@ from neuralhydrology.training.earlystopper import EarlyStopper
 
 LOGGER = logging.getLogger(__name__)
 
+# helper: prepare forecast autoregressive inputs for teacher forcing (training)
+def build_ar_teacher_forcing(y, seq_h, seq_f, lags=1):
+    # y: (batch, seq_total, out) torch.Tensor
+    # returns tensor (batch, seq_f, lags) with last-dim order [lag1, lag2...]
+    B, S, O = y.shape
+    ar = torch.zeros((B, seq_f, lags), device=y.device, dtype=y.dtype)
+    for t in range(seq_f):
+        for lag in range(1, lags+1):
+            idx = seq_h + t - lag  # index in y
+            if idx >= 0:
+                ar[:, t, lag-1] = y[:, idx, 0]  # assumes scalar target in dim 0
+            else:
+                ar[:, t, lag-1] = y[:, 0, 0]  # fallback if needed
+    return ar
 
 class BaseTrainer(object):
     """Default class to train a model.
@@ -59,7 +73,10 @@ class BaseTrainer(object):
         self._dynamic_learning_rate = cfg.dynamic_learning_rate
         self._patience_dynamic_learning_rate = cfg.patience_dynamic_learning_rate
         self._factor_dynamic_learning_rate = cfg.factor_dynamic_learning_rate
-
+        self._save_best_enabled = cfg.save_best_enabled
+        self._save_best_criterion = cfg.save_best_criterion
+        self._best_score = float("inf")
+        self._best_epoch = None
         # load train basin list and add number of basins to the config
         self.basins = load_basin_file(cfg.train_basin_file)
         self.cfg.number_of_basins = len(self.basins)
@@ -154,7 +171,11 @@ class BaseTrainer(object):
 
         # Initialize dataset before the model is loaded.
         ds = self._get_dataset()
+
+        # keep dataset reference to save scaler later when saving best
+        self.ds = ds
         # print(f"Dataset length: {len(ds)}")
+
         if len(ds) == 0:
             raise ValueError("Dataset contains no samples.")
         self.loader = self._get_data_loader(ds=ds)
@@ -225,7 +246,7 @@ class BaseTrainer(object):
             # print("============")
             if self.cfg.is_continue_training:
                 LOGGER.warning("Scheduler state is reset.")
-            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=self._factor_dynamic_learning_rate, patience=self._patience_dynamic_learning_rate, threshold=0.05, threshold_mode='rel', cooldown=5, min_lr=1e-7)
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=self._factor_dynamic_learning_rate, patience=self._patience_dynamic_learning_rate, threshold=0.05, threshold_mode='rel', cooldown=3, min_lr=1e-7)
 
         for epoch in range(self._epoch + 1, self._epoch + self.cfg.epochs + 1):
             if not self._dynamic_learning_rate:
@@ -256,7 +277,50 @@ class BaseTrainer(object):
                     print_msg += f" -- Median validation metrics: "
                     print_msg += ", ".join(f"{k}: {v:.5f}" for k, v in valid_metrics.items() if k != 'avg_total_loss')
                     LOGGER.info(print_msg)
-                
+                # --- saveBest logic ---
+                if self._save_best_enabled:
+                    # choose criterion
+                    if self._save_best_criterion == "val_loss":
+                        # lower is better
+                        score = valid_metrics.get("avg_total_loss", float("inf"))
+                    elif self._save_best_criterion == "sum_metrics":
+                        # make directions consistent (lower is better):
+                        # sum = MSE + MAPE + (1 - NSE)
+                        mse = valid_metrics.get("MSE", 0.0)
+                        mape = valid_metrics.get("MAPE", 0.0)
+                        nse = valid_metrics.get("NSE", 0.0)
+                        score = float(mse) + float(mape) + (1.0 - float(nse))
+                    else:
+                        LOGGER.warning(f"Unknown save_best_criterion '{self.cfg.save_best_criterion}', skipping saveBest.")
+                        score = float("inf")
+
+                    # check improvement (lower is better)
+                    if score < self._best_score:
+                        LOGGER.info(f"[saveBest] New best model found at epoch {epoch}: {score:.6f} (prev {self._best_score:.6f})")
+                        self._best_score = score
+                        self._best_epoch = epoch
+                        # save model, optimizer, scaler, and metrics snapshot
+                        best_model_path = self.cfg.run_dir / "best_model.pt"
+                        torch.save(self.model.state_dict(), str(best_model_path))
+                        best_opt_path = self.cfg.run_dir / "best_optimizer_state.pt"
+                        if self.optimizer is not None:
+                            torch.save(self.optimizer.state_dict(), str(best_opt_path))
+                        # save scaler if available on dataset
+                        try:
+                            if hasattr(self, "ds") and getattr(self.ds, "scaler", None) is not None:
+                                best_scaler_path = self.cfg.run_dir / "best_model_scaler.pth"
+                                torch.save(self.ds.scaler, str(best_scaler_path))
+                        except Exception as e:
+                            LOGGER.warning(f"[saveBest] could not save scaler: {e}")
+                        # save validation metrics snapshot
+                        try:
+                            import pickle
+                            metrics_path = self.cfg.run_dir / f"best_model_metrics.p"
+                            with open(metrics_path, "wb") as fp:
+                                pickle.dump(valid_metrics, fp)
+                        except Exception as e:
+                            LOGGER.warning(f"[saveBest] could not save metrics: {e}")
+                # --- end saveBest ---
 
                 if self._early_stopping and epoch > self._minimum_epochs_before_early_stopping and early_stopper.check_early_stopping(valid_metrics['avg_total_loss']):
                     LOGGER.info(f"Early stopping triggered at epoch {epoch} with validation loss {valid_metrics['avg_total_loss']:.5f}. Training stopped.")
@@ -321,6 +385,7 @@ class BaseTrainer(object):
         for i, data in enumerate(pbar):
             if self._max_updates_per_epoch is not None and i >= self._max_updates_per_epoch:
                 break
+
             # print("data keys in trainer: ", data.keys())
             # print("data x_d keys in trainer: ", data['x_d'].keys())
             # print("data x_d_hindcast keys in trainer: ", data['x_d_hindcast'].keys())
@@ -333,12 +398,30 @@ class BaseTrainer(object):
                     data[key] = data[key].to(self.device)
             # print("after loading in the trainer")
             # apply possible pre-processing to the batch before the forward pass
-            data = self.model.pre_model_hook(data, is_train=True)
+            if self.cfg.head.lower() == "umal":
+                data = self.model.pre_model_hook(data, is_train=True)
+            
+            # print("Infos about DATA:")
+            # print("data keys: ", data.keys())
+            # print("data_hindcast shape: ", data['x_d_hindcast'].keys())
+            # print("data_hindcast: ", data['x_d_hindcast']['streamflow_hindcast'].shape)
+            # print("data y: ", data['y'].shape)
+            
+            # ----
+            # batch contains 'y' and model expects x_d_forecast dict
+            # seq_h = self.cfg.hindcast_length
+            # seq_f = self.cfg.predict_last_n
+            # lags = self.cfg.autoregressive_lags if hasattr(self.cfg, 'autoregressive_lags') else 1
+            # ar_tensor = build_ar_teacher_forcing(data['y'], seq_h, seq_f, lags=lags)
+            # data['x_d_forecast'][self.cfg.autoregressive_inputs[0]] = ar_tensor
+            # predictions = self.model(data)   # standard training, then slice forecast and compute loss
+            # ----
             # get predictions
             predictions = self.model(data)
+
             if self.noise_sampler_y is not None:
                 for key in filter(lambda k: 'y' in k, data.keys()):
-                    noise = self.noise_sampler_y.sample(data[key].shape)
+                    noise = self.noise_sampler_y.sample(data[key].shape())
                     # make sure we add near-zero noise to originally near-zero targets
                     data[key] += (data[key] + self._target_mean / self._target_std) * noise.to(self.device)
             

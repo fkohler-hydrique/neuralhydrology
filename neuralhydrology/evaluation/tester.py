@@ -135,9 +135,16 @@ class BaseTester(object):
 
         return weight_file
 
-    def _load_weights(self, epoch: int = None):
+    def _get_weight_file_fromBest(self):
+        weight_file = self.run_dir / "best_model.pt"
+        return weight_file
+    
+    def _load_weights(self, epoch: int = None, from_best: bool = False):
         """Load weights of a certain (or the last) epoch into the model."""
-        weight_file = self._get_weight_file(epoch)
+        if from_best:
+            weight_file = self._get_weight_file_fromBest()
+        else:
+            weight_file = self._get_weight_file(epoch)
 
         LOGGER.info(f"Using the model weights from {weight_file}")
         self.model.load_state_dict(torch.load(weight_file, map_location=self.device))
@@ -159,7 +166,8 @@ class BaseTester(object):
                  save_all_output: bool = False,
                  metrics: Union[list, dict] = [],
                  model: torch.nn.Module = None,
-                 experiment_logger: Logger = None) -> dict:
+                 experiment_logger: Logger = None,
+                 from_best = False) -> dict:
         """Evaluate the model.
         
         Parameters
@@ -184,7 +192,11 @@ class BaseTester(object):
         """
         if model is None:
             if self.init_model:
-                self._load_weights(epoch=epoch)
+                if from_best:
+                    self._load_weights(from_best=from_best)
+                else:
+                    self._load_weights(epoch=epoch)
+                
                 model = self.model
             else:
                 raise RuntimeError("No model was initialized for the evaluation")

@@ -269,6 +269,9 @@ def plot_forecast_24h(
     # Build Plotly figure
     fig = go.Figure()
 
+    # store trace data (x,y arrays) for dynamic y-scaling callback
+    trace_data = []
+
     fig.add_trace(
         go.Scatter(
             x=obs_combined.index,
@@ -278,7 +281,8 @@ def plot_forecast_24h(
             line=dict(color="crimson", width=2),
         )
     )
-    
+    trace_data.append({"x": np.asarray(obs_combined.index).astype("datetime64[ns]"), "y": np.asarray(obs_combined.values)})
+
     if mode == "spaghetti":
         # Plot every forecast trajectory
         print("not yet implemented")
@@ -293,15 +297,18 @@ def plot_forecast_24h(
         colors = get_n_colors(len(horizons))
         # note: index 0 means t+24h, -23 means t+1h
         for color, hor in zip(colors,horizons):
+            xs = sim_df.index - pd.Timedelta(hours=(horizon_len-hor))
+            ys = sim_df.iloc[:, hor-1].values
             fig.add_trace(
                 go.Scatter(
-                    x=sim_df.index-pd.Timedelta(hours=(horizon_len-hor)),
-                    y=sim_df.iloc[:, hor-1].values,
+                    x=xs,
+                    y=ys,
                     mode="lines",
                     name=f"Simulated Flow | +{hor}h",
                     line=dict(color=color, width=1.5)
                 )
             )
+            trace_data.append({"x": np.asarray(xs).astype("datetime64[ns]"), "y": np.asarray(ys)})
     elif mode == "last":
         # display the last prediction of the horizon (t+24h)
         fig.add_trace(
@@ -313,6 +320,7 @@ def plot_forecast_24h(
                 line=dict(color="royalblue", width=1.5)
             )
         )
+        trace_data.append({"x": np.asarray(sim_df.index).astype("datetime64[ns]"), "y": np.asarray(sim_df[0].values)})
     else:
         raise ValueError("unknown mode detected")
 
@@ -325,14 +333,77 @@ def plot_forecast_24h(
         legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
         width=width,
         height=height,
-        margin=dict(l=50, r=30, t=80, b=50)
+        margin=dict(l=50, r=30, t=80, b=50),
+        dragmode="zoom"   # enable box zoom by default
     )
 
     # --- Zoom range slider ---
     fig.update_xaxes(rangeslider_visible=True)
 
-    # --- Show ---
-    fig.show()
+    # Convert to FigureWidget for interactive callbacks in Jupyter
+    try:
+        figw = go.FigureWidget(fig)
+    except Exception:
+        # fallback to non-widget figure if not in Jupyter environment
+        figw = fig
+
+    # dynamic y-axis scaling callback (works when using FigureWidget in a Jupyter notebook)
+    if isinstance(figw, go.FigureWidget):
+        def _update_yaxis(relayout_data):
+            # handle autorange/reset
+            if relayout_data is None:
+                return
+            # when reset axes or autorange requested, use autorange
+            if relayout_data.get("xaxis.autorange") or relayout_data.get("autosize"):
+                figw.layout.yaxis.autorange = True
+                return
+
+            # typical relayout keys from slider/zoom are 'xaxis.range[0]' and 'xaxis.range[1]'
+            x0 = relayout_data.get("xaxis.range[0]") or relayout_data.get("xaxis.range")
+            x1 = relayout_data.get("xaxis.range[1]") if "xaxis.range[1]" in relayout_data else None
+
+            # handle tuple form or single key
+            if isinstance(x0, (list, tuple)) and len(x0) == 2:
+                x0, x1 = x0[0], x0[1]
+            if x0 is None or x1 is None:
+                return
+
+            # convert to pandas Timestamp for comparisons
+            try:
+                x0_ts = pd.to_datetime(x0)
+                x1_ts = pd.to_datetime(x1)
+            except Exception:
+                return
+
+            # compute min/max across visible portion of each stored trace
+            ys_min = []
+            ys_max = []
+            for td in trace_data:
+                xs = pd.to_datetime(td["x"])
+                mask = (xs >= x0_ts) & (xs <= x1_ts)
+                if mask.any():
+                    ys = np.asarray(td["y"])[mask]
+                    # filter nan
+                    ys = ys[~np.isnan(ys)]
+                    if ys.size > 0:
+                        ys_min.append(ys.min())
+                        ys_max.append(ys.max())
+
+            if len(ys_min) == 0:
+                return
+
+            new_min = float(np.min(ys_min))
+            new_max = float(np.max(ys_max))
+            # add small padding
+            pad = (new_max - new_min) * 0.06 if new_max > new_min else max(abs(new_min), 1.0) * 0.06
+            figw.update_yaxes(range=[new_min - pad, new_max + pad], autorange=False)
+
+        # attach callback
+        figw.on_relayout(_update_yaxis)
+
+    # Show figure
+    figw.show()
+    # fig.show()
 
 # ==========================================
 

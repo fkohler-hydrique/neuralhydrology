@@ -2,7 +2,7 @@
 # 1. Experiment setup
 # ------------------------------------------------
 
-experiment_name: "m2"         # Name used for run folders/logs
+experiment_name: "m2_base"         # Name used for run folders/logs
 base_run_dir: ./runs           # Base directory for experiment runs
 # run_dir: "24h_30ep_v1"                   # Custom run dir (overrides auto naming)
 train_dir: null                # Directory for saving training artifacts
@@ -105,13 +105,13 @@ clip_targets_to_zero:
 model: "sequential_forecast_lstm"                    # Model type (e.g. "lstm", "transformer", "arlstm")
 head: "regression"                     # Head type for output e.g. "regression", "gmm", "cmal", "umal"
 hidden_size: 128              # Model hidden size (int or dict)
-num_layers: 1                 # Number of LSTM layers
+num_layers: 2                 # Number of LSTM layers
 
 seq_length: 150  # 2 weeks of context, predict last day of sequence               # Input sequence length (in frequency of measure -> if hourly: 168 is 2weeks, 8760 is a year)
 predict_last_n: 24            # Prediction horizon (will consider only the t0+predict_last_n*freq_measure point)
 
 output_activation: "linear"
-output_dropout: 0.1            #0.2–0.3 for multi-basin,  0.0–0.1 for single-basin
+output_dropout: 0.2            #0.2–0.3 for multi-basin,  0.0–0.1 for single-basin
 
 # LSTM
 initial_forget_bias: 2                    # Initial bias value of the forget gate (0-3, high helps the model remember the past)
@@ -121,12 +121,22 @@ initial_forget_bias: 2                    # Initial bias value of the forget gat
 # ------------------------------------------------
 
 epochs: 1000
-learning_rate:  1e-3         # specify learning rates to use starting at specific epochs (0 is the initial learning rate)
+learning_rate:  1e-4         # specify learning rates to use starting at specific epochs (0 is the initial learning rate)
 
 
-batch_size: 64
-optimizer: "AdamW"             # specify optimizer [Adam. AdamW]
-loss: SMAPE                     # specify loss [MSE, NSE, RMSE]
+batch_size: 16
+optimizer: "Adam"             # specify optimizer [Adam. AdamW]
+custom_loss: 
+  losses: 
+    - smape
+    - mse
+    - nse
+  weights: 
+    - 0.6
+    - 0.2
+    - 0.2
+    
+loss: custom_loss                     # specify loss [MSE, NSE, RMSE]
 
 clip_gradient_norm: 3.0           # avoids exploding gradients
 
@@ -142,7 +152,7 @@ validate_n_random_basins: 1
 
 # NEED validate_every set to 1
 early_stopping: true
-patience_early_stopping: 15
+patience_early_stopping: 20
 minimum_epochs_before_early_stopping: 20
 min_delta_early_stopping: 5e-7
 # Dynamic LR

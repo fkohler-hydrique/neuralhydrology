@@ -147,7 +147,7 @@ def finetune(config_file: Path = None, gpu: int = None):
     start_training(config)
 
 
-def eval_run(run_dir: Path, period: str, epoch: int = None, gpu: int = None):
+def eval_run(run_dir: Path, period: str, epoch: int = None, gpu: int = None, from_best: bool = False):
     """Start evaluating a trained model.
     
     Parameters
@@ -170,7 +170,7 @@ def eval_run(run_dir: Path, period: str, epoch: int = None, gpu: int = None):
     if gpu is not None and gpu < 0:
         config.device = "cpu"
 
-    start_evaluation(cfg=config, run_dir=run_dir, epoch=epoch, period=period)
+    start_evaluation(cfg=config, run_dir=run_dir, epoch=epoch, period=period, from_best=from_best)
 
 
 if __name__ == "__main__":

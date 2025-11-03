@@ -133,13 +133,46 @@ class BaseLoss(torch.nn.Module):
         all_losses['total_loss'] = total_loss
         return total_loss, all_losses
 
-    @staticmethod
-    def _subset_in_time(prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor],
+    def _subset_in_time(self, prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor],
                         predict_last_n: int) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
-        ground_truth_sub = {key: gt[:, -predict_last_n:, :] for key, gt in ground_truth.items()}
-        prediction_sub = {key: pred[:, -predict_last_n:, :] for key, pred in prediction.items()}
+        """
+        Subset ground truth and prediction to the last `predict_last_n` timesteps.
 
+        Accepts prediction tensors of shape:
+          - (batch, seq, out)  -> normal case, slice last timesteps
+          - (batch, out)       -> flattened last-N outputs (e.g., head produced N outputs)
+        The latter is reshaped to (batch, predict_last_n, output_size_per_target) when possible.
+        """
+        # subset ground truth (expects [batch, seq, out])
+        ground_truth_sub = {key: gt[:, -predict_last_n:, :] for key, gt in ground_truth.items()}
+
+        prediction_sub = {}
+        for key, pred in prediction.items():
+            if pred.dim() == 3:
+                # standard case: (batch, seq, out)
+                prediction_sub[key] = pred[:, -predict_last_n:, :]
+            elif pred.dim() == 2:
+                # flattened case: (batch, out_flat)
+                bs, out_flat = pred.shape
+                expected_out = predict_last_n * self._output_size_per_target
+
+                if out_flat == expected_out:
+                    # reshape to (batch, predict_last_n, output_size_per_target)
+                    if self._output_size_per_target == 1:
+                        # (batch, predict_last_n) -> (batch, predict_last_n, 1)
+                        prediction_sub[key] = pred[:, -predict_last_n:].unsqueeze(-1)
+                    else:
+                        prediction_sub[key] = pred.reshape(bs, predict_last_n, self._output_size_per_target)
+                elif out_flat == self._output_size_per_target:
+                    # model returned a single timestep per batch: treat as seq_len=1
+                    prediction_sub[key] = pred.unsqueeze(1)  # (batch, 1, out)
+                else:
+                    # fallback: try to interpret as single-timestep and warn
+                    prediction_sub[key] = pred.unsqueeze(1)
+            else:
+                raise ValueError(f"Prediction tensor for key '{key}' must be 2D or 3D, got {pred.dim()}D.")
         return prediction_sub, ground_truth_sub
+
 
     def _subset_target(self, prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor],
                        n_target: int) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
@@ -241,17 +274,60 @@ class MaskedSMAPELoss(BaseLoss):
     def _get_loss(self, prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor], **kwargs):
         y_true = ground_truth['y']
         y_pred = prediction['y_hat']
+        # print("\n",y_pred.shape)
+        # print(y_true.shape)
+        # --- ALIGN shapes to (batch, seq, out) ---
+        if y_pred.dim() == 3 and y_true.dim() == 3:
+            # handle seq-first vs batch-first (common mistake)
+            if y_pred.shape[0] == y_true.shape[0] and y_pred.shape[1] == y_true.shape[1]:
+                pass  # already aligned
+            elif y_pred.shape[0] == y_true.shape[1] and y_pred.shape[1] == y_true.shape[0]:
+                y_pred = y_pred.transpose(0, 1)
+            else:
+                # handle expanded batch (e.g., UMAL: batch_pred = n * batch_true)
+                if y_pred.shape[1:] == y_true.shape[1:] and (y_pred.shape[0] % y_true.shape[0] == 0):
+                    n = y_pred.shape[0] // y_true.shape[0]
+                    y_true = y_true.repeat(n, 1, 1)
+                elif y_true.shape[1:] == y_pred.shape[1:] and (y_true.shape[0] % y_pred.shape[0] == 0):
+                    n = y_true.shape[0] // y_pred.shape[0]
+                    y_pred = y_pred.repeat(n, 1, 1)
+                else:
+                    raise ValueError(f"Incompatible shapes for SMAPE: y_pred {tuple(y_pred.shape)} vs y_true {tuple(y_true.shape)}")
+        else:
+            raise ValueError("y_pred and y_true must be 3D tensors (batch, seq, out) for MaskedSMAPELoss")
 
+        # create mask and compute SMAPE on valid entries
         mask = ~torch.isnan(y_true)
-        y_true = y_true[mask]
-        y_pred = y_pred[mask]
+        y_true_valid = y_true[mask]
+        y_pred_valid = y_pred[mask]
 
         epsilon = 1e-8
-        numerator = torch.abs(y_true - y_pred)
-        denominator = (torch.abs(y_true) + torch.abs(y_pred)) / 2.0 + epsilon
+        numerator = torch.abs(y_true_valid - y_pred_valid)
+        denominator = (torch.abs(y_true_valid) + torch.abs(y_pred_valid)) / 2.0 + epsilon
         loss = 100.0 * torch.mean(numerator / denominator)
 
         return loss
+    
+    # def _get_loss(self, prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor], **kwargs):
+    #     y_true = ground_truth['y']
+    #     y_pred = prediction['y_hat']
+    #     # adding some printing to see the size of the prediction and to verify that only the predictions on the forecast period are used for the loss
+    #     # print("\npred size", y_pred.size())
+    #     # print("obs size", y_true.size())
+    #     # print("obs:", y_true[2,:].reshape(-1))
+    #     # print("sim:", y_pred[2,:].reshape(-1))
+    #     # print("pred", y_pred[- self._predict_last_n:])
+    #     # print("true", y_true[- self._predict_last_n:])
+    #     mask = ~torch.isnan(y_true)
+    #     y_true = y_true[mask]
+    #     y_pred = y_pred[mask]
+
+    #     epsilon = 1e-8
+    #     numerator = torch.abs(y_true - y_pred)
+    #     denominator = (torch.abs(y_true) + torch.abs(y_pred)) / 2.0 + epsilon
+    #     loss = 100.0 * torch.mean(numerator / denominator)
+
+    #     return loss
 
 class CombinedLoss(BaseLoss):
     """Combine multiple BaseLoss instances with specified weights."""
