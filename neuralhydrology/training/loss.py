@@ -62,6 +62,7 @@ class BaseLoss(torch.nn.Module):
         # all classes allow per-target weights for multi-target settings. By default, all targets are weighted equally
         if cfg.target_loss_weights is None:
             weights = torch.tensor([1 / len(cfg.target_variables) for _ in range(len(cfg.target_variables))])
+            # print("target weight: ", weights)
         else:
             if len(cfg.target_loss_weights) == len(cfg.target_variables):
                 weights = torch.tensor(cfg.target_loss_weights)
@@ -105,6 +106,14 @@ class BaseLoss(torch.nn.Module):
             freq_pred, freq_gt = self._subset_in_time(
                 {key: prediction[f'{key}{freq_suffix}'] for key in self._prediction_keys},
                 {key: data[f'{key}{freq_suffix}'] for key in self._ground_truth_keys}, self._predict_last_n[freq])
+            
+            # print("\ntest: does subset_in_time change our value:")
+            # print(torch.sum(prediction['y_hat']-freq_pred['y_hat']))
+            
+            # print("freq_pred, after subset")
+            # here size of freq_pred = batch, predict last n, num target or 1 not sure
+            # print(len(freq_pred['y_hat']))
+            # print(freq_pred['y_hat'].size())
 
             # remember subsets for multi-frequency component
             prediction_sub.update({f'{key}{freq_suffix}': freq_pred[key] for key in freq_pred.keys()})
@@ -113,14 +122,21 @@ class BaseLoss(torch.nn.Module):
             for n_target, weight in enumerate(self._target_weights):
                 # subset the model outputs and ground truth corresponding to this particular target
                 target_pred, target_gt = self._subset_target(freq_pred, freq_gt, n_target)
+                # print("target_pred, after subset target")
+                # print(len(target_pred['y_hat']))
+                # print(target_pred['y_hat'].size())
+                # Here too, batch, predict last n, size per target = 1
 
                 # model hook to subset additional data, which might be different for different losses
                 kwargs_sub = self._subset_additional_data(kwargs, n_target)
 
+                # keys: target_pred='y_hat', target_gt='y'
                 loss = self._get_loss(target_pred, target_gt, **kwargs_sub)
+                # loss2 = self._get_loss(target_pred['y_hat'], target_gt['y_hat'])
                 losses.append(loss * weight)
 
-        loss = torch.sum(torch.stack(losses))
+        # loss = torch.sum(torch.stack(losses))
+        # print("loss diff  ", loss-losses[0])
         total_loss = loss.clone()
         all_losses = defaultdict(lambda: 0)
         all_losses['loss'] = loss
@@ -246,13 +262,16 @@ class MaskedMAPELoss(BaseLoss):
 
         # Create a mask to ignore NaNs in ground truth
         mask = ~torch.isnan(y_true)
+        # print(mask[:10])
+        # y3 = y_true
         y_true = y_true[mask]
         y_pred = y_pred[mask]
-
+        # print("\ntest mask nan:")
+        # print(torch.sum(y3-y_true))
         # Avoid division by zero (add a small epsilon)
-        epsilon = 1e-6
-        loss = torch.mean(torch.abs((y_true - y_pred) / (y_true + epsilon))) * 100.0  # in percentage
-
+        epsilon = 1e-9
+        loss = torch.mean(torch.abs((y_true - y_pred) / torch.clip(torch.abs(y_true), epsilon, None))) * 100.0  # in percentage
+        # print(loss)
         return loss
 
 

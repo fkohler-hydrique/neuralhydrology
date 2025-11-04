@@ -315,7 +315,7 @@ class BaseTester(object):
 
                 # freq_range are the steps of the current frequency at each lowest-frequency step
                 frequency_factor = int(get_frequency_factor(lowest_freq, freq))
-
+                # frequency_factor = 24
                 # Create coords dictionary for the xarray.Dataset. 'date' can be directly infered from the dates
                 # dictionary. We index the sample by the date of the last timestep of the sequence. The 'time_step'
                 # index that specifies the position in the output sequence (relative to the end) can be inferred by
@@ -355,7 +355,10 @@ class BaseTester(object):
                             .stack(datetime=['date', 'time_step']) \
                             .drop_vars({'datetime', 'date', 'time_step'})[f"{target_variable}_obs"]
                         obs['datetime'] = freq_date_range
-                        # check if there are observations for this period
+                        
+                        # print("\nMetrics - Validation: obs ", obs)
+                        # print(len(obs))
+
                         if not all(obs.isnull()):
                             sim = xr.isel(time_step=slice(-frequency_factor, None)) \
                                 .stack(datetime=['date', 'time_step']) \
@@ -365,8 +368,10 @@ class BaseTester(object):
                             # clip negative predictions to zero, if variable is listed in config 'clip_target_to_zero'
                             if target_variable in self.cfg.clip_targets_to_zero:
                                 sim = xarray.where(sim < 0, 1e-5, sim)
-
+                            # print("\nMetrics - Validation: sim ", sim)
+                            # print(len(sim))
                             if 'samples' in sim.dims:
+                                print("\nsamples !! ")
                                 sim = sim.mean(dim='samples')
 
                             var_metrics = metrics if isinstance(metrics, list) else metrics[target_variable]
@@ -489,8 +494,14 @@ class BaseTester(object):
                         data[key] = {k: v.to(self.device) for k, v in data[key].items()}
                     elif not key.startswith('date'):
                         data[key] = data[key].to(self.device)
-                data = model.pre_model_hook(data, is_train=False)
+                if self.cfg.head.lower() == "umal": 
+                    data = model.pre_model_hook(data, is_train=False)
                 predictions, loss = self._get_predictions_and_loss(model, data)
+
+                # keys: y_hat
+                # in this key: batch, n_predict , num target, so all good
+                # print("\nvalidation: predictions shape: ", predictions['y_hat'].shape)
+                # print("shape of 1st el: ", predictions['y_hat'][0])
 
                 if all_output:
                     for key, value in predictions.items():
@@ -505,9 +516,15 @@ class BaseTester(object):
 
                 for freq in frequencies:
                     if predict_last_n[freq] == 0:
+                        print("Wesh Jul")
                         continue  # no predictions for this frequency
                     freq_key = '' if len(frequencies) == 1 else f'_{freq}'
                     y_hat_sub, y_sub = self._subset_targets(model, data, predictions, predict_last_n[freq], freq_key)
+
+                    # shape as expected of both: batch, predict_last_n, num_target
+                    # print("Shape of y_hat sub: ", y_hat_sub.shape)
+                    # print("Shape of y_sub: ", y_sub.shape)
+
                     # Date subsetting is universal across all models and thus happens here.
                     date_sub = data[f'date{freq_key}'][:, -predict_last_n[freq]:]
 
@@ -543,7 +560,12 @@ class BaseTester(object):
 
     def _get_predictions_and_loss(self, model: BaseModel, data: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, float]:
         predictions = model(data)
-        _, all_losses = self.loss_obj(predictions, data)
+        loss, all_losses = self.loss_obj(predictions, data)
+
+        # print("\n Shapes of the loss and all_losses")
+        # print("loss: ", loss)
+        # print("all_losses: ", all_losses)
+        # loss is a single float value
         return predictions, {k: v.item() for k, v in all_losses.items()}
 
     def _subset_targets(self, model: BaseModel, data: Dict[str, torch.Tensor], predictions: np.ndarray,

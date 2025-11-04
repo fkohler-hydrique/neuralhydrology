@@ -2,7 +2,7 @@
 # 1. Experiment setup
 # ------------------------------------------------
 
-experiment_name: "test_plot"         # Name used for run folders/logs
+experiment_name: "train_valid"         # Name used for run folders/logs
 base_run_dir: ./runs           # Base directory for experiment runs
 
 train_dir: null                # Directory for saving training artifacts
@@ -112,14 +112,15 @@ clip_targets_to_zero:
 
 model: "sequential_forecast_lstm"                    # Model type (e.g. "lstm", "transformer", "arlstm")
 head: "regression"                     # Head type for output e.g. "regression", "gmm", "cmal", "umal"
-hidden_size: 128              # Model hidden size (int or dict)
-num_layers: 1                # Number of LSTM layers
+hidden_size: 256              # Model hidden size (int or dict)
+num_layers: 2                 # Number of LSTM layers
 
-seq_length: 60  # 2 weeks of context, predict last day of sequence               # Input sequence length (in frequency of measure -> if hourly: 168 is 2weeks, 8760 is a year)
+seq_length: 72  # 2 weeks of context, predict last day of sequence               # Input sequence length (in frequency of measure -> if hourly: 168 is 2weeks, 8760 is a year)
 predict_last_n: 24            # Prediction horizon (will consider only the t0+predict_last_n*freq_measure point)
 
 output_activation: "linear"
-output_dropout: 0.05            #0.2–0.3 for multi-basin,  0.0–0.1 for single-basin
+output_dropout: 0.1            #0.2–0.3 for multi-basin,  0.0–0.1 for single-basin
+
 # LSTM
 initial_forget_bias: 2                   # Initial bias value of the forget gate (0-3, high helps the model remember the past)
 
@@ -140,21 +141,22 @@ learning_rate:  1e-3         # specify learning rates to use starting at specifi
 #   dropout:
 #     0.0
 
-batch_size: 256
+batch_size: 128
 optimizer: "AdamW"             # specify optimizer [Adam. AdamW]
 
 custom_loss:
   losses:
-  - smape
+  - mape
   - mse
   - nse
   weights:
-  - 0.8
-  - 0.1
+  - 0.7
+  - 0.2
   - 0.1
 
 # custom_loss or smape
-loss: custom_loss                     # specify loss [MSE, NSE, RMSE]
+loss: mape                     # specify loss [MSE, NSE, RMSE]
+
 clip_gradient_norm: 3.0           # avoids exploding gradients
 
 metrics:
@@ -175,10 +177,10 @@ min_delta_early_stopping: 5e-7
 # Dynamic LR
 dynamic_learning_rate: true
 patience_dynamic_learning_rate: 5 #6
-factor_dynamic_learning_rate: 0.4
+factor_dynamic_learning_rate: 0.2
 
 save_best_enabled: true
-save_best_criterion: val_loss  # or sum_metrics
+save_best_criterion: sum_metrics # or val_loss
 # ------------------------------------------------
 # 5. Output & Logging
 # ------------------------------------------------
@@ -187,10 +189,10 @@ log_interval: 10
 log_n_figures: 1
 log_tensorboard: true
 
-save_train_data: false
-save_validation_results: false
-save_all_output: false
-save_weights_every: 5
+save_train_data: true
+save_validation_results: true
+save_all_output: true
+save_weights_every: 2
 
 verbose: 1                      # 0 = logs only, 1 = logs + progress
 
