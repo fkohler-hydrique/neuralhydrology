@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict
 
 import numpy as np
+import pandas as pd  
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -289,7 +290,9 @@ class BaseTrainer(object):
                         mse = valid_metrics.get("MSE", 0.0)
                         mape = valid_metrics.get("MAPE", 0.0)
                         nse = valid_metrics.get("NSE", 0.0)
-                        score = float(mse) + float(mape) + (1.0 - float(nse))
+                        score = float(mse) + float(mape) + (1-float(nse))
+                    elif self._save_best_criterion in ["NSE", "MSE", "MAPE"]:
+                        score = valid_metrics.get(self._save_best_criterion, 10) 
                     else:
                         LOGGER.warning(f"Unknown save_best_criterion '{self.cfg.save_best_criterion}', skipping saveBest.")
                         score = float("inf")
@@ -314,10 +317,10 @@ class BaseTrainer(object):
                             LOGGER.warning(f"[saveBest] could not save scaler: {e}")
                         # save validation metrics snapshot
                         try:
-                            import pickle
-                            metrics_path = self.cfg.run_dir / f"best_model_metrics.p"
-                            with open(metrics_path, "wb") as fp:
-                                pickle.dump(valid_metrics, fp)
+                            metrics_path = self.cfg.run_dir / "best_model_metrics.csv"
+                            metrics_path.parent.mkdir(parents=True, exist_ok=True)  # ensure folder exists
+                            df_metrics = pd.DataFrame([valid_metrics])  # <- wrap in a list for a single-row frame
+                            df_metrics.to_csv(metrics_path, index=False)  # no row index in the CSV
                         except Exception as e:
                             LOGGER.warning(f"[saveBest] could not save metrics: {e}")
                 # --- end saveBest ---

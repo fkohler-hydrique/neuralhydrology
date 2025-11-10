@@ -414,7 +414,7 @@ class BaseTester(object):
         if save_all_output:
             states_to_save = all_output
         if save_results or save_all_output:
-            self._save_results(results=results_to_save, states=states_to_save, epoch=epoch)
+            self._save_results(results=results_to_save, states=states_to_save, epoch=epoch, from_best=from_best)
 
         return results
 
@@ -438,7 +438,7 @@ class BaseTester(object):
                 # make sure the preamble is a valid file name
                 experiment_logger.log_figures(figures, freq, preamble=re.sub(r"[^A-Za-z0-9\._\-]+", "", target_var))
 
-    def _save_results(self, results: Optional[dict], states: Optional[dict] = None, epoch: int = None):
+    def _save_results(self, results: Optional[dict], states: Optional[dict] = None, epoch: int = None, from_best: bool = False):
         """Store results in various formats to disk.
         
         Developer note: We cannot store the time series data (the xarray objects) as netCDF file but have to use
@@ -446,10 +446,18 @@ class BaseTester(object):
         be used as variable names. However, for convenience we will store metrics, if calculated, in a separate csv-file.
         """
         # use name of weight file as part of the result folder name
-        weight_file = self._get_weight_file(epoch=epoch)
+        if from_best:
+            print("from best ma gueule")
+            weight_file = self._get_weight_file_fromBest()
+        else:
+            weight_file = self._get_weight_file(epoch)
 
+        df_metrics = None
         # make sure the parent directory exists
-        parent_directory = self.run_dir / self.period / weight_file.stem
+        if from_best:
+            parent_directory = self.run_dir / self.period / "model_from_best"
+        else:
+            parent_directory = self.run_dir / self.period / weight_file.stem
         parent_directory.mkdir(parents=True, exist_ok=True)
 
         # save metrics any time this function is called, as long as they exist
@@ -459,18 +467,18 @@ class BaseTester(object):
                 metrics_list = list(set(metrics_list.values()))
             if "all" in metrics_list:
                 metrics_list = get_available_metrics()
-            df = metrics_to_dataframe(results, metrics_list, self.cfg.target_variables)
+            df_metrics = metrics_to_dataframe(results, metrics_list, self.cfg.target_variables)
             metrics_file = parent_directory / f"{self.period}_metrics.csv"
-            df.to_csv(metrics_file)
-            LOGGER.info(f"Stored metrics at {metrics_file}")
+            df_metrics.to_csv(metrics_file)
+            # LOGGER.info(f"Stored metrics at {metrics_file}")
 
         # store all results packed as pickle file
         if results is not None:
             result_file = parent_directory / f"{self.period}_results.p"
             with result_file.open("wb") as fp:
                 pickle.dump(results, fp)
-            LOGGER.info(f"Stored results at {result_file}")
-
+            # LOGGER.info(f"Stored results at {result_file}")
+        
         # store all model output packed as pickle file
         if states is not None:
             result_file = parent_directory / f"{self.period}_all_output.p"

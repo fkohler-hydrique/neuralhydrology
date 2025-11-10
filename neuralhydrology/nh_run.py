@@ -74,7 +74,7 @@ def start_run(config_file: Path, gpu: int = None):
     if gpu is not None and gpu < 0:
         config.device = "cpu"
 
-    start_training(config)
+    return(start_training(config))
 
 
 def continue_run(run_dir: Path, config_file: Path = None, gpu: int = None):

@@ -172,9 +172,9 @@ def plot_hydrograph(
 
 # ----------------
 
-def plot_training_curves(train_df, val_df):
+def plot_training_curves(train_df, val_df, save_fig = False, run_dir=None):
     """Plot loss and validation metrics."""
-    fig, ax1 = plt.subplots(figsize=(6, 3))
+    fig, ax1 = plt.subplots(figsize=(8, 4))
 
     c1 = "#1e3a7a"
     c2 = "#dc6b2b"
@@ -194,11 +194,13 @@ def plot_training_curves(train_df, val_df):
     plt.box()
     plt.grid(alpha=0.5)
     fig.tight_layout()
-    plt.show()
+    if save_fig:
+        if run_dir is not None:
+            plt.savefig(f"{run_dir}/Losses_over_Training.png", dpi=300, bbox_inches="tight")
+        else: print("Error, not Run dir was given to save the training plot")
+    else: plt.show()
 
-
-
-def plot_validation_metrics(val_df):
+def plot_validation_metrics(val_df, save_fig = False, run_dir=None):
     """Plot validation metrics like NSE, RMSE, etc."""
     c = "#50c878"
     metrics = ["MAPE", "NSE", "MSE", "RMSE"]
@@ -215,7 +217,11 @@ def plot_validation_metrics(val_df):
 
     fig.suptitle("Validation Metrics over Epochs", fontsize=14)
     plt.tight_layout()
-    plt.show()
+    if save_fig:
+        if run_dir is not None:
+            plt.savefig(f"{run_dir}/Metrics_over_Training.png", dpi=300, bbox_inches="tight")
+        else: print("Error, not Run dir was given to save the training plot")
+    else: plt.show()
 
 # --------------------
 

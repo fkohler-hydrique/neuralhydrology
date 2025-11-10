@@ -1,0 +1,119 @@
+experiment_name: "96h"         # Name used for run folders/logs
+base_run_dir: ./runs           # Base directory for experiment runs
+data_dir: "../data"       # Path to dataset
+
+batch_size: 128
+clip_gradient_norm: 3.0
+clip_targets_to_zero:
+- streamflow
+commit_hash: fa38f84
+custom_loss:
+  losses:
+  - smape
+  - mse
+  - nse
+  weights:
+  - 0.8
+  - 0.1
+  - 0.1
+dataset: swisshourly
+device: cuda:0
+dynamic_inputs:
+- streamflow_hindcast
+- null_values
+- Massa|22_Q simule
+- Massa|69_i
+- Massa|69_T
+- Massa|70_h
+- Massa|71_h
+- Massa|71_A
+- Massa|73_H
+- Massa|73_A
+- HourOfDaySinus
+- DayOfYearSinus
+dynamic_learning_rate: true
+early_stopping: true
+epochs: 1000
+factor_dynamic_learning_rate: 0.5
+forecast_inputs:
+- null_values
+- Massa|22_Q simule
+- Massa|69_i
+- Massa|69_T
+- Massa|70_h
+- Massa|71_h
+- Massa|71_A
+- Massa|73_H
+- Massa|73_A
+- HourOfDaySinus
+- DayOfYearSinus
+forecast_overlap:
+forecast_seq_length: 96
+head: regression
+hidden_size: 256
+hindcast_inputs:
+- streamflow_hindcast
+- Massa|22_Q simule
+- Massa|69_i
+- Massa|69_T
+- Massa|70_h
+- Massa|71_h
+- Massa|71_A
+- Massa|73_H
+- Massa|73_A
+- HourOfDaySinus
+- DayOfYearSinus
+
+initial_forget_bias: 1
+learning_rate: 0.001
+log_interval: 10
+log_n_figures: 1
+log_tensorboard: true
+loss: custom_loss
+metrics:
+- MAPE
+- NSE
+- MSE
+- RMSE
+min_delta_early_stopping: 5e-07
+minimum_epochs_before_early_stopping: 20
+model: sequential_forecast_lstm
+nan_handling_method: masked_mean
+nan_handling_pos_encoding_size: 0
+nan_sequence_probability: 0.0
+nan_step_probability: 0.0
+num_layers: 1
+num_workers: 16
+number_of_basins: 1
+optimizer: AdamW
+output_activation: linear
+output_dropout: 0.2
+package_version: 1.12.0
+patience_dynamic_learning_rate: 5
+patience_early_stopping: 20
+predict_last_n: 96
+
+save_all_output: false
+save_best_criterion: sum_metrics
+save_best_enabled: true
+save_train_data: false
+save_validation_results: true
+save_weights_every: 2
+seed: 42
+seq_length: 220
+target_variables:
+- streamflow
+test_basin_file: ..\data\Data_RS.txt
+test_end_date: 04/02/2024
+test_start_date: 03/02/2023
+timestep_counter: true
+train_basin_file: ..\data\Data_RS.txt
+
+train_end_date: 30/04/2021
+train_start_date: 04/03/1983
+validate_every: 1
+validate_n_random_basins: 1
+validation_basin_file: ..\data\Data_RS.txt
+validation_end_date: 02/02/2023
+validation_start_date: 01/03/2021
+verbose: 1

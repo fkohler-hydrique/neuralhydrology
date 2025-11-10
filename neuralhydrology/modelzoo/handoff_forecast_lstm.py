@@ -40,55 +40,101 @@ class HandoffForecastLSTM(BaseModel):
     ValueError if a state_handoff_network is not specified.
     """
     # specify submodules of the model that can later be used for finetuning. Names must match class attributes
-    module_parts = ['hindcast_embedding_net', 'forecast_embedding_net', 'hindcast_lstm', 'forecast_lstm', 'hindcast_head', 'forecast_head', 'handoff_net']
+    module_parts = ['hindcast_embedding_net', 'forecast_embedding_net', 'hindcast_lstm', 'handoff_net', 'forecast_lstm', 'dropout', 'head']
 
     def __init__(self, cfg: Config):
         super(HandoffForecastLSTM, self).__init__(cfg=cfg)
-
+        self._predict_last_n = cfg.predict_last_n
         self.initial_hindcast_seq_length = self.cfg.seq_length - self.cfg.forecast_seq_length
 
-        self.forecast_embedding_net = InputLayer(cfg, embedding_type='forecast')
         self.hindcast_embedding_net = InputLayer(cfg, embedding_type='hindcast')
+        self.forecast_embedding_net = InputLayer(cfg, embedding_type='forecast')
 
-        self.hindcast_hidden_size = cfg.hindcast_hidden_size
+        self._hindcast_hidden_size = cfg.hindcast_hidden_size
         self.hindcast_lstm = nn.LSTM(
             input_size=self.hindcast_embedding_net.output_size,
-            hidden_size=self.hindcast_hidden_size
+            hidden_size=self._hindcast_hidden_size,
+            num_layers=cfg.num_layers
         )
-        self.forecast_hidden_size = cfg.forecast_hidden_size
+        self._forecast_hidden_size = cfg.forecast_hidden_size
         self.forecast_lstm = nn.LSTM(
             input_size=self.forecast_embedding_net.output_size,
-            hidden_size=self.forecast_hidden_size
+            hidden_size=self._forecast_hidden_size,
+            num_layers=cfg.num_layers
         )
 
         if not cfg.state_handoff_network:
             raise ValueError('The handoff forecast LSTM requires a state handoff network specified in the config file.')
 
-        self.handoff_net = FC(
-            input_size=self.hindcast_hidden_size*2,
-            hidden_sizes=cfg.state_handoff_network['hiddens'],
-            activation=cfg.state_handoff_network['activation'],
-            dropout=cfg.state_handoff_network['dropout']
-        )
-        self.handoff_linear =  FC(
-            input_size=cfg.state_handoff_network['hiddens'][-1],
-            hidden_sizes=[self.forecast_hidden_size*2],
-            activation='linear',
-            dropout=0.0
-        )
+        self._hiddens_handoff = cfg.state_handoff_network['hiddens']
+        # print(self._hiddens_handoff)
+        # if len(self._hiddens_handoff)>1:
+        # self.handoff_net = FC(
+        #     input_size=self._hindcast_hidden_size*2,
+        #     hidden_sizes=cfg.state_handoff_network['hiddens'][:],
+        #     activation=cfg.state_handoff_network['activation'],
+        #     dropout=cfg.state_handoff_network['dropout']
+        # )
+        # self.handoff_linear =  FC(
+        #     input_size=cfg.state_handoff_network['hiddens'][-1],
+        #     hidden_sizes=[self._forecast_hidden_size*2],
+        #     activation='linear',
+        #     dropout=0.0
+        # )
+        # print(cfg.state_handoff_network['activation'])
+        # print(cfg.state_handoff_network['activation'].lower())
+        if cfg.state_handoff_network['activation'].lower() == 'relu':
+            activationLayer = nn.ReLU()
+        elif cfg.state_handoff_network['activation'].lower() == 'sigmoid':
+            activationLayer = nn.Sigmoid()
+        elif cfg.state_handoff_network['activation'].lower() == 'linear':
+            activationLayer = nn.Identity()
+        elif cfg.state_handoff_network['activation'].lower() == 'tanh':
+            activationLayer = nn.Tanh()
+        elif cfg.state_handoff_network['activation'].lower() == 'gelu':
+            activationLayer = nn.GELU()
+        else:
+            print("activation layer of the handoff net to implement")
+        
+        handoff_layers = [nn.Linear(self._hindcast_hidden_size*2, self._hiddens_handoff[0])]
+        handoff_layers.append(activationLayer)
+        handoff_layers.append(nn.Dropout(cfg.state_handoff_network['dropout']))
+        for i, el in enumerate(self._hiddens_handoff[1:]):
+            handoff_layers.append(nn.Linear(self._hiddens_handoff[i], el))
+            handoff_layers.append(activationLayer)
+            handoff_layers.append(nn.Dropout(cfg.state_handoff_network['dropout']))
+        handoff_layers.append(nn.Linear(self._hiddens_handoff[-1], self._forecast_hidden_size*2))
+        self.handoff_net = nn.Sequential(*handoff_layers).to(cfg.device)
+        # print(self.handoff_net)
+        # print(self.handoff_linear)
 
         self.dropout = nn.Dropout(p=cfg.output_dropout)
 
-        self.hindcast_head = get_head(cfg=cfg, n_in=self.hindcast_hidden_size, n_out=self.output_size)
-        self.forecast_head = get_head(cfg=cfg, n_in=self.forecast_hidden_size, n_out=self.output_size)
+        self.head = get_head(cfg=cfg, n_in=self._forecast_hidden_size, n_out=self.output_size)
 
         self._reset_parameters()
 
     def _reset_parameters(self):
         """Special initialization of certain model weights."""
-        if self.cfg.initial_forget_bias is not None:
-            self.hindcast_lstm.bias_hh_l0.data[self.hindcast_hidden_size:2 * self.hindcast_hidden_size] = self.cfg.initial_forget_bias
-            self.forecast_lstm.bias_hh_l0.data[self.forecast_hidden_size:2 * self.forecast_hidden_size] = self.cfg.initial_forget_bias
+        if self.cfg.initial_forget_bias is None:
+            return
+        import torch
+        b = float(self.cfg.initial_forget_bias)
+        h_h = self._hindcast_hidden_size
+        h_f = self._forecast_hidden_size
+
+        with torch.no_grad():
+            # hindcast LSTM: set forget bias in hidden->hidden and input->hidden if present
+            if hasattr(self.hindcast_lstm, "bias_hh_l0"):
+                self.hindcast_lstm.bias_hh_l0[h_h:2*h_h].fill_(b)
+            if hasattr(self.hindcast_lstm, "bias_ih_l0"):
+                self.hindcast_lstm.bias_ih_l0[h_h:2*h_h].fill_(b)
+
+            # forecast LSTM: same
+            if hasattr(self.forecast_lstm, "bias_hh_l0"):
+                self.forecast_lstm.bias_hh_l0[h_f:2*h_f].fill_(b)
+            if hasattr(self.forecast_lstm, "bias_ih_l0"):
+                self.forecast_lstm.bias_ih_l0[h_f:2*h_f].fill_(b)
 
     def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         """Perform a forward pass on the HandoffForecastLSTM model.
@@ -122,6 +168,7 @@ class HandoffForecastLSTM(BaseModel):
         x_h = self.hindcast_embedding_net(data)
         x_f = self.forecast_embedding_net(data)
 
+
         # run the hindcast lstm
         lstm_output_hindcast, (h_n_hindcast, c_n_hindcast) = self.hindcast_lstm(x_h[:self.initial_hindcast_seq_length, ...])
         lstm_output_hindcast = lstm_output_hindcast.transpose(0, 1)
@@ -132,8 +179,7 @@ class HandoffForecastLSTM(BaseModel):
             lstm_output_hindcast_overlap = None
 
         # handoff initial state to forecast lstm
-        x = self.handoff_net(torch.cat([h_n_hindcast, c_n_hindcast], -1))
-        initial_state = self.handoff_linear(x)
+        initial_state = self.handoff_net(torch.cat([h_n_hindcast, c_n_hindcast], -1))
         h_n_handoff, c_n_handoff = initial_state.chunk(2, -1)
         h_n_handoff = h_n_handoff.contiguous()
         c_n_handoff = c_n_handoff.contiguous()
@@ -145,45 +191,8 @@ class HandoffForecastLSTM(BaseModel):
         lstm_output_forecast = lstm_output_forecast[:, self.cfg.forecast_overlap:, :]
 
         # run heads for hindcast and forecast
-        y_hindcast = self.hindcast_head(self.dropout(lstm_output_hindcast))
-        y_forecast = self.forecast_head(self.dropout(lstm_output_forecast))
-        if x_h.shape[0] > self.initial_hindcast_seq_length:
-            y_hindcast_overlap = self.hindcast_head(self.dropout(lstm_output_hindcast_overlap))
-            y_forecast_overlap = self.forecast_head(self.dropout(lstm_output_forecast_overlap))
-            pred = {key: torch.cat([y_hindcast[key], y_hindcast_overlap[key], y_forecast[key]], dim=1) for key in y_hindcast}
-        else:
-            pred = {key: torch.cat([y_hindcast[key], y_forecast[key]], dim=1) for key in y_hindcast}
-            y_hindcast_overlap, y_forecast_overlap = None, None
+        y_forecast = self.head(self.dropout(lstm_output_forecast))
 
-        # reshape to [batch_size, seq, n_hiddens]
-        h_n_hindcast = h_n_hindcast.transpose(0, 1)
-        c_n_hindcast = c_n_hindcast.transpose(0, 1)
-        h_n_handoff = h_n_handoff.transpose(0, 1)
-        c_n_handoff = c_n_handoff.transpose(0, 1)
-        h_n_forecast = h_n_forecast.transpose(0, 1)
-        c_n_forecast = c_n_forecast.transpose(0, 1)
+        y_hat = y_forecast['y_hat']
 
-        pred.update(
-            {
-                'lstm_output_hindcast': lstm_output_hindcast,
-                'lstm_output_hindcast_overlap': lstm_output_hindcast_overlap,
-                'lstm_output_forecast_overlap': lstm_output_forecast_overlap,
-                'lstm_output_forecast': lstm_output_forecast,
-
-                'y_forecast': y_forecast,
-                'y_forecast_overlap': y_forecast_overlap,
-                'y_hindcast_overlap': y_hindcast_overlap,
-                'y_hindcast': y_hindcast,
-
-                'h_n_hindcast': h_n_hindcast,
-                'c_n_hindcast': c_n_hindcast,
-
-                'h_n_handoff': h_n_handoff,
-                'c_n_handoff': c_n_handoff,
-
-                'h_n_forecast': h_n_forecast,
-                'c_n_forecast': c_n_forecast,
-            }
-        )
-
-        return pred
+        return {'y_hat': y_hat}

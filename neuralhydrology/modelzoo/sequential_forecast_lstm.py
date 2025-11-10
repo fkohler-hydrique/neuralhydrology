@@ -33,8 +33,8 @@ class SequentialForecastLSTM(BaseModel):
     # specify submodules of the model that can later be used for finetuning. Names must match class attributes
     module_parts = ['hindcast_embedding_net', 'forecast_embedding_net', 'lstm', 'dropout', 'head']
     def __init__(self, cfg: Config):
-        super(SequentialForecastLSTM, self).__init__(cfg=cfg)
         self._predict_last_n = cfg.predict_last_n
+        super(SequentialForecastLSTM, self).__init__(cfg=cfg)
         if cfg.forecast_overlap:
             raise ValueError('Forecast overlap cannot be set for a sequential forecasting model. '
                              'Please set to None or remove from config file.')
@@ -49,8 +49,8 @@ class SequentialForecastLSTM(BaseModel):
         self.lstm = nn.LSTM(
             input_size=self.forecast_embedding_net.output_size,
             hidden_size=cfg.hidden_size,
-            num_layers=cfg.num_layers
-            # dropout=0.02
+            num_layers=cfg.num_layers,
+            dropout=cfg.lstm_dropout
         )
 
         self.dropout = nn.Dropout(p=cfg.output_dropout)
@@ -60,12 +60,16 @@ class SequentialForecastLSTM(BaseModel):
         self._reset_parameters()
 
     def _reset_parameters(self):
-        """Special initialization of certain model weights."""
+        """Special initialization of certain model weights.
+
+        If `initial_forget_bias` is specified, we initialize the forget gate bias to this value.
+        """
         if self.cfg.initial_forget_bias is not None:
+            # Initialize the forget gate bias to a constant value.
             self.lstm.bias_hh_l0.data[self.cfg.hidden_size:2 * self.cfg.hidden_size] = self.cfg.initial_forget_bias
 
 
-
+        
     def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         """Perform a forward pass on the SequentialForecastLSTM model.
 
@@ -77,8 +81,8 @@ class SequentialForecastLSTM(BaseModel):
         Returns
         -------
         Dict[str, torch.Tensor]
-            Model outputs and intermediate states as a dictionary. Key `'y_hat'` contains
-            predictions with shape (batch, predict_last_n, n_targets).
+            A dictionary containing the model predictions.
+                - y_hat: last 'predict_last_n' predictions
         """
         # possibly pass dynamic and static inputs through embedding layers, then concatenate them
         x_h = self.hindcast_embedding_net(data)
@@ -99,60 +103,24 @@ class SequentialForecastLSTM(BaseModel):
         # returns (batch, seq_tot, hidden_lstm)
         # print("LSTM out", lstm_out.shape)
 
-        lstm_forecast_part = lstm_out[:, -self._predict_last_n:, :]
-        head_in = self.dropout(lstm_forecast_part)
+        head_in = self.dropout(lstm_out)
 
         # Run head - heads may return a tensor or a dict with 'y_hat'
-        head_out = self.head(head_in)
+        pred = self.head(head_in)
 
-        # extract raw tensor from head_out
-        if isinstance(head_out, dict):
-            if 'y_hat' in head_out:
-                y_raw = head_out['y_hat']
-            else:
-                # try to find first tensor value
-                vals = [v for v in head_out.values() if isinstance(v, torch.Tensor)]
-                if not vals:
-                    raise RuntimeError("Head returned a dict without tensor outputs")
-                y_raw = vals[0]
-        elif isinstance(head_out, torch.Tensor):
-            y_raw = head_out
-        else:
-            raise RuntimeError("Head returned unsupported type: %s" % type(head_out))
+        # The head might return a dict, and we are interested in 'y_hat'.
+        # If it's not a dict, we assume the tensor is the prediction.
+        if not isinstance(pred, dict) or 'y_hat' not in pred:
+            raise ValueError("Head output must be a dictionary containing a 'y_hat' tensor")
+        
+        y_hat_full = pred['y_hat']
+        
+        # y_hat_hindcast = y_hat_full[:, :-self._predict_last_n, :]
+        y_hat_predicted = y_hat_full[:, -self._predict_last_n:, :]
 
-        # normalize to (batch, predict_last_n, n_targets)
-        B = y_raw.shape[0]
-        pred_n = self._predict_last_n
-        n_targets = self.output_size
-
-        # possible shapes handling
-        if y_raw.dim() == 3:
-            # (batch, seq_out, out_dim)
-            seq_out, out_dim = y_raw.shape[1], y_raw.shape[2]
-            if seq_out == pred_n and out_dim == n_targets:
-                y_hat = y_raw
-            elif seq_out == 1 and out_dim == (pred_n * n_targets):
-                y_hat = y_raw.reshape(B, pred_n, n_targets)
-            elif seq_out == 1 and out_dim == pred_n and n_targets == 1:
-                y_hat = y_raw.squeeze(1).unsqueeze(-1)  # (batch, pred_n, 1)
-            elif seq_out == pred_n and out_dim == 1 and n_targets == 1:
-                y_hat = y_raw  # already (batch, pred_n, 1)
-            else:
-                raise ValueError(f"Cannot interpret head output shape {tuple(y_raw.shape)} as (batch,{pred_n},{n_targets})")
-        elif y_raw.dim() == 2:
-            # (batch, out_flat)
-            out_flat = y_raw.shape[1]
-            if out_flat == pred_n * n_targets:
-                y_hat = y_raw.reshape(B, pred_n, n_targets)
-            elif out_flat == pred_n and n_targets == 1:
-                y_hat = y_raw.unsqueeze(-1)
-            elif out_flat == n_targets:
-                # single timestep returned
-                y_hat = y_raw.unsqueeze(1)
-            else:
-                raise ValueError(f"Cannot interpret head output shape {tuple(y_raw.shape)} as (batch,{pred_n},{n_targets})")
-        else:
-            raise ValueError(f"Unsupported head output dimension: {y_raw.dim()}")
-
-        return {'y_hat': y_hat}
+        # The training loop expects 'y_hat', so we provide the concatenated version.
+        # Specific evaluation can be done on the hindcast/forecast parts.
+        return {
+            'y_hat': y_hat_predicted
+        }
     

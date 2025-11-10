@@ -697,6 +697,10 @@ class Config(object):
     @property
     def output_dropout(self) -> float:
         return self._cfg.get("output_dropout", 0.0)
+    
+    @property
+    def lstm_dropout(self) -> float:
+        return self._cfg.get("lstm_dropout", 0.0)
 
     @property
     def per_basin_test_periods_file(self) -> Path:
@@ -749,6 +753,15 @@ class Config(object):
     @property
     def save_weights_every(self) -> int:
         return self._cfg.get("save_weights_every", 1)
+
+    @property
+    def save_in_csv(self) -> bool:
+        return self._cfg.get("save_in_csv", False)
+
+    @property
+    def csv_metrics_name(self) -> str:
+        return self._cfg.get("csv_metrics_name", "Metrics_over_Experiments")
+
 
     @property
     def seed(self) -> int:

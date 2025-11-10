@@ -18,3 +18,4 @@ def start_training(cfg: Config):
         raise ValueError(f"Unknown head {cfg.head}.")
     trainer.initialize_training()
     trainer.train_and_validate()
+    return cfg.run_dir

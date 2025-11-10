@@ -3,8 +3,9 @@ import pandas as pd
 from pathlib import Path
 import numpy as np
 
-def parse_neuralhydrology_log(log_path: str | Path):
-    """Parse output.log from NeuralHydrology training run."""
+def parse_neuralhydrology_log(log_path: str | Path, verbose: bool = True):
+    """Parse output.log from NeuralHydrology training run.
+    improvement to implement: takes the list of metrics given in the config file"""
     log_path = Path(log_path)
     text = log_path.read_text(encoding="utf-8")
 
@@ -23,7 +24,7 @@ def parse_neuralhydrology_log(log_path: str | Path):
     train_df = pd.DataFrame(train_data, columns=["epoch", "avg_loss", "avg_total_loss"]).astype(float)
     val_df = pd.DataFrame(val_data, columns=["epoch", "avg_val_loss", "MAPE", "NSE", "MSE", "RMSE"]).astype(float)
 
-    print(f"✅ Parsed {len(train_df)} training epochs and {len(val_df)} validation evaluations.")
+    if verbose: print(f"✅ Parsed {len(train_df)} training epochs and {len(val_df)} validation evaluations.")
     return train_df, val_df
 
 
