@@ -6,7 +6,7 @@
 # Project & Paths
 # ==============================================================================
 
-experiment_name: "96h"  # Name used for run folders/logs
+experiment_name: "mape8"  # Name used for run folders/logs
 base_run_dir: ./runs      # Base directory for experiment runs
 
 img_log_dir: null         # Directory for saving image logs
@@ -82,6 +82,11 @@ target_variables:  # streamflow name is "forced", code not modularized enough
 clip_targets_to_zero:
   - streamflow
 
+# Only keep sequences whose last target 'streamflow' > 40
+high_flow_only: true
+high_flow_target: streamflow   # must be in cfg.target_variables
+high_flow_threshold: 40.0
+
 # custom_normalization:
 #   streamflow: 
 #     scaling: "minmax"
@@ -150,10 +155,10 @@ batch_size: 32  # Mini-batch size (int).
 optimizer: "AdamW"        # Specify optimizer [Adam. AdamW]
 loss: custom_loss         # Specify loss [MSE, NSE, RMSE, ...]
 
-seq_length: 220             # Input sequence length, in frequency of measure
-predict_last_n: 96         # Prediction horizon
+seq_length: 72             # Input sequence length, in frequency of measure
+predict_last_n: 24         # Prediction horizon
 
-forecast_seq_length: 96    # Must be < seq_length, length of sequence that uses the forecast features
+forecast_seq_length: 24    # Must be < seq_length, length of sequence that uses the forecast features
 forecast_overlap: null     # Must be <= forecast_seq_length
 
 custom_loss:              # Custom loss function
@@ -162,8 +167,8 @@ custom_loss:              # Custom loss function
   - nse
   - mse
   weights:
-  - 0.8
-  - 0.1
+  - 0.7
+  - 0.2
   - 0.1
 
 clip_gradient_norm: 5.0   # Avoids exploding gradients
@@ -180,13 +185,13 @@ validate_n_random_basins: 1
 
 # NEED validate_every set to 1
 early_stopping: true
-patience_early_stopping:              10
-minimum_epochs_before_early_stopping: 15
+patience_early_stopping:              20
+minimum_epochs_before_early_stopping: 20
 min_delta_early_stopping:             1e-7
 
 # Dynamic LR
 dynamic_learning_rate: true
-patience_dynamic_learning_rate:       4     #6
+patience_dynamic_learning_rate:       5     #6
 factor_dynamic_learning_rate:         0.4   # Learning rate (float).
 
 # ==============================================================================
@@ -205,7 +210,7 @@ save_weights_every: 10
 verbose: 1                      # 0 = logs only, 1 = logs + progress
 
 save_best_enabled: true
-save_best_criterion: sum_metrics # or val_loss or one from ["MAPE", "MSE", "NSE"]
+save_best_criterion: sum_metrics # or val_loss
 
 save_in_csv: true
 # add the .csv automatically, just have to provide the name of the file
@@ -216,7 +221,7 @@ csv_metrics_name: Metrics_over_Experiments
 # ------------------------------------------------
 
 # Handling missing data
-nan_handling_method: masked_mean
+nan_handling_method: masked_mean       # e.g. "mask", "zero"
 nan_step_probability: 0.0
 nan_sequence_probability: 0.0
 nan_handling_pos_encoding_size: 0

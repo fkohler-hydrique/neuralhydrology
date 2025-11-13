@@ -114,3 +114,279 @@ def dict_without_xr_key(old_dict:dict):
     new_dict = old_dict.copy()
     new_dict.pop('xr', None)
     return new_dict
+
+
+
+from typing import Iterable, Tuple, Dict, Any, Optional
+import numpy as np
+import matplotlib.pyplot as plt
+
+def hydrograph_flows_distribution(
+    flows: Iterable[float],
+    bins: Optional[Iterable[float]] = None,
+    plot: bool = False,
+    plot_kind: str = "both",  # "both", "hydrograph", or "hist"
+    ax: Optional[Tuple[plt.Axes, ...]] = None,
+) -> Dict[str, Any]:
+    """
+    Analyze a hydrograph (time series of flow rates) by classifying flows into classes.
+
+    Parameters
+    ----------
+    flows : Iterable[float]
+        1D sequence of flow values (e.g. discharge in m³/s) over time.
+    bins : Iterable[float], optional
+        Class boundaries for flow ranges. Must be monotonically increasing.
+        - If None, defaults to [0, 10, 40, 80, np.inf] corresponding to:
+          [0–10), [10–40), [40–80), [80–inf).
+        - You can pass your own like [0, 5, 20, 100, np.inf].
+    plot : bool, default False
+        Whether to produce a plot.
+    plot_kind : {"both", "hydrograph", "hist"}, default "both"
+        Type of plot to generate if `plot=True`:
+        - "hydrograph": time series only
+        - "hist": bar plot of class percentages
+        - "both": hydrograph + histogram
+    ax : matplotlib Axes or tuple of Axes, optional
+        Axes to plot on. If None, new figure(s) will be created.
+        - For plot_kind="both", pass a tuple (ax1, ax2).
+        - For "hydrograph" or "hist", pass a single Axes.
+
+    Returns
+    -------
+    result : dict
+        Dictionary containing:
+        - "bins": np.ndarray of bin edges
+        - "counts": np.ndarray of counts per class
+        - "percentages": np.ndarray of percentages per class (sum to 100)
+        - "labels": list of str, human-readable class labels
+        - "flows": np.ndarray of input flows (cleaned 1D array)
+    """
+    # ---- 1. Prepare data ----
+    flows = np.asarray(flows, dtype=float).ravel()
+    if flows.size == 0:
+        raise ValueError("`flows` is empty. Provide a non-empty sequence of flow values.")
+
+    if bins is None:
+        bins = [0.0, 10.0, 40.0, 80.0, np.inf]
+    bins = np.asarray(bins, dtype=float)
+
+    if not np.all(np.diff(bins) > 0):
+        raise ValueError("`bins` must be strictly monotonically increasing.")
+
+    # ---- 2. Compute histogram (class counts) ----
+    counts, edges = np.histogram(flows, bins=bins)
+    total = counts.sum()
+    if total == 0:
+        percentages = np.zeros_like(counts, dtype=float)
+    else:
+        percentages = counts / total * 100.0
+
+    # ---- 3. Make human-readable class labels ----
+    def _format_edge(val: float) -> str:
+        if np.isinf(val):
+            return "∞"
+        # Trim trailing .0 for nicer labels
+        s = f"{val:g}"
+        return s
+
+    labels = []
+    for i in range(len(edges) - 1):
+        left = _format_edge(edges[i])
+        right = _format_edge(edges[i + 1])
+        if np.isinf(edges[i + 1]):
+            label = f"{left}–∞"
+        else:
+            # Convention: [left, right)
+            label = f"{left}–{right}"
+        labels.append(label)
+
+    result = {
+        "bins": edges,
+        "counts": counts,
+        "percentages": percentages,
+        "labels": labels,
+        "flows": flows,
+    }
+
+    # ---- 4. Optional plotting ----
+    if plot:
+        plot_kind = plot_kind.lower()
+        if plot_kind not in {"both", "hydrograph", "hist"}:
+            raise ValueError("plot_kind must be one of {'both', 'hydrograph', 'hist'}")
+
+        # Figure + axes handling
+        if plot_kind == "both":
+            if ax is None:
+                fig, (ax1, ax2) = plt.subplots(
+                    2, 1, figsize=(8, 6), sharex=False,
+                    gridspec_kw={"height_ratios": [2, 1]}
+                )
+            else:
+                ax1, ax2 = ax
+        else:
+            if ax is None:
+                fig, ax_single = plt.subplots(figsize=(8, 4))
+            else:
+                ax_single = ax
+
+        # Hydrograph plot
+        if plot_kind in {"both", "hydrograph"}:
+            if plot_kind == "both":
+                ax_h = ax1
+            else:
+                ax_h = ax_single
+
+            t = np.arange(flows.size)
+            ax_h.plot(t, flows, lw=1.5)
+            ax_h.set_xlabel("Time step")
+            ax_h.set_ylabel("Flow")
+            ax_h.set_title("Hydrograph")
+
+        # Histogram / class distribution plot
+        if plot_kind in {"both", "hist"}:
+            if plot_kind == "both":
+                ax_bar = ax2
+            else:
+                ax_bar = ax_single
+
+            x = np.arange(len(labels))
+            ax_bar.bar(x, percentages)
+            ax_bar.set_xticks(x)
+            ax_bar.set_xticklabels(labels, rotation=45, ha="right")
+            ax_bar.set_ylabel("Percentage of time (%)")
+            ax_bar.set_title("Flow class distribution")
+            ax_bar.grid(True, axis="y", linestyle="--", alpha=0.4)
+
+        plt.tight_layout()
+
+    return result
+
+
+def print_hydrograph_distribution(res: dict):
+    labels = res["labels"]
+    counts = res["counts"]
+    percentages = res["percentages"]
+
+    # 1) Optional: overall summary
+    print(f"Total points: {counts.sum()}\n")
+
+    # 2) Column headers
+    print(f"{'Class':<10} {'Count':>10} {'Percentage':>12}")
+    print("-" * 34)
+
+    # 3) Rows
+    for label, c, p in zip(labels, counts, percentages):
+        print(f"{label:<10} {c:>10d} {p:>11.2f}%")
+
+
+
+import numpy as np
+from typing import Iterable, Dict, Any, Optional
+
+def mape_by_flow_class(
+    y_true: Iterable[float],
+    y_pred: Iterable[float],
+    bins: Optional[Iterable[float]] = None,
+    ignore_zero: bool = True,
+) -> Dict[str, Any]:
+    """
+    Compute MAPE per flow class, where classes are defined on the *observed* flows.
+
+    Parameters
+    ----------
+    y_true : array-like
+        Observed/measured flows.
+    y_pred : array-like
+        Simulated/predicted flows. Must be broadcastable to y_true.
+    bins : array-like, optional
+        Class boundaries for flow ranges, monotonically increasing.
+        If None, defaults to [0, 10, 40, 80, np.inf].
+    ignore_zero : bool, default True
+        If True, exclude points where y_true == 0 from MAPE calculation
+        (to avoid division by zero). If False, those MAPEs will be set to np.nan.
+
+    Returns
+    -------
+    result : dict
+        {
+            "bins": np.ndarray of bin edges,
+            "labels": list of str for classes,
+            "counts": np.ndarray of number of points in each class (all points),
+            "valid_counts": np.ndarray of points actually used for MAPE
+                            (depends on ignore_zero),
+            "mape_per_class": np.ndarray of MAPE values (percent) per class,
+            "global_mape": float, overall MAPE over all valid points,
+        }
+    """
+    y_true = np.asarray(y_true, dtype=float).ravel()
+    y_pred = np.asarray(y_pred, dtype=float).ravel()
+
+    if y_true.shape != y_pred.shape:
+        raise ValueError("y_true and y_pred must have the same shape after ravel().")
+    if y_true.size == 0:
+        raise ValueError("Empty input arrays.")
+
+    if bins is None:
+        bins = [0.0, 10.0, 40.0, 80.0, np.inf]
+    bins = np.asarray(bins, dtype=float)
+    if not np.all(np.diff(bins) > 0):
+        raise ValueError("`bins` must be strictly monotonically increasing.")
+
+    # Helper: pretty class labels
+    def _fmt(v: float) -> str:
+        if np.isinf(v):
+            return "∞"
+        return f"{v:g}"
+
+    labels = []
+    for i in range(len(bins) - 1):
+        left, right = bins[i], bins[i + 1]
+        if np.isinf(right):
+            labels.append(f"{_fmt(left)}–∞")
+        else:
+            labels.append(f"{_fmt(left)}–{_fmt(right)}")
+
+    counts = np.zeros(len(labels), dtype=int)
+    valid_counts = np.zeros(len(labels), dtype=int)
+    mape_per_class = np.full(len(labels), np.nan, dtype=float)
+
+    # Global mask for valid MAPE points
+    if ignore_zero:
+        global_valid = y_true != 0
+    else:
+        # Avoid division by zero by marking zeros invalid;
+        # they will just never enter valid sets, so MAPE may be nan.
+        global_valid = y_true != 0
+
+    abs_pct_errors_all = np.abs((y_pred[global_valid] - y_true[global_valid]) / y_true[global_valid]) * 100
+
+    # Class-specific MAPE
+    for i in range(len(labels)):
+        lower, upper = bins[i], bins[i + 1]
+        class_mask = (y_true >= lower) & (y_true < upper)
+        counts[i] = np.count_nonzero(class_mask)
+
+        valid_mask = class_mask & global_valid
+        valid_counts[i] = np.count_nonzero(valid_mask)
+
+        if valid_counts[i] > 0:
+            mape_per_class[i] = np.mean(
+                np.abs((y_pred[valid_mask] - y_true[valid_mask]) / y_true[valid_mask])
+            ) * 100.0
+        else:
+            mape_per_class[i] = np.nan
+
+    # Global MAPE (over all valid points)
+    global_mape = np.nan
+    if abs_pct_errors_all.size > 0:
+        global_mape = abs_pct_errors_all.mean()
+
+    return {
+        "bins": bins,
+        "labels": labels,
+        "counts": counts,
+        "valid_counts": valid_counts,
+        "mape_per_class": mape_per_class,
+        "global_mape": global_mape,
+    }

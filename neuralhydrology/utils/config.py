@@ -328,6 +328,20 @@ class Config(object):
     def save_best_criterion(self) -> str:
         return self._cfg.get("save_best_criterion", "sum_metrics")
 
+    # --- High flows only: ---
+    @property
+    def high_flow_only(self) -> bool:
+        return self._cfg.get("high_flow_only", False)
+
+    @property
+    def high_flow_target(self) -> str:
+        return self._cfg.get("high_flow_target", "streamflow")
+
+    @property
+    def high_flow_threshold(self) -> float:
+        return self._cfg.get("high_flow_threshold", 40.0)
+    # --- ---- 
+    
     @property
     def save_transformed_targets(self) -> dict:
         return self._as_default_dict(self._cfg.get("save_transformed_targets", False))

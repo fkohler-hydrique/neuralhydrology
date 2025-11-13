@@ -6,7 +6,7 @@
 # Project & Paths
 # ==============================================================================
 
-experiment_name: "96h"  # Name used for run folders/logs
+experiment_name: "try1"  # Name used for run folders/logs
 base_run_dir: ./runs      # Base directory for experiment runs
 
 img_log_dir: null         # Directory for saving image logs
@@ -23,56 +23,107 @@ num_workers: 16           # Data loader workers
 data_dir: "../../data"    # Path to dataset
 dataset:  "swisshourly"   # Dataset name # for example "swisshourly"
 
-train_basin_file:      "../../data/Data_RS.txt" # File listing training basins
-validation_basin_file: "../../data/Data_RS.txt" # File listing validation basins
-test_basin_file:       "../../data/Data_RS.txt" # File listing test basins
+train_basin_file:      "../../data/massa3.txt" # File listing training basins
+validation_basin_file: "../../data/massa3.txt" # File listing validation basins
+test_basin_file:       "../../data/massa3.txt" # File listing test basins
 
-train_start_date:       04/03/1983   
-train_end_date:         30/04/2021   
-validation_start_date:  01/03/2021
-validation_end_date:    02/02/2023
-test_start_date:        03/02/2023
-test_end_date:          04/02/2024   
+train_start_date:       2020-03-01   # first valid day of January
+train_end_date:         2022-02-28   # last valid day of February
+validation_start_date:  2022-03-01   
+validation_end_date:    2023-02-02   
+test_start_date:        2023-02-03   
+test_end_date:          2024-02-04   
 
 dynamic_inputs:  
-- streamflow_hindcast
-- null_values
-- Massa|22_Q simule
-- Massa|69_i
-- Massa|69_T
-- Massa|70_h
-- Massa|71_h
-- Massa|71_A
-- Massa|73_H
+- noon	
+- june	
+- daylight		
+- ray_jungfrau	
+- ray_visp	
+- ray_eggishorn	
+- ray_m1		
+- streamflow_hindcast	
+- null_values		
+- prec_bruchji	
+- prec_fieschertal		
+- temp_jungfraujoch	
+- temp_binn	
+- temp_eggishorn	
+- temp_visp	
+- temp_m1	
+- temp_m1_12h	
+- is_m1_snow		
+- fc_prec_bruchji	
+- fc_prec_fieschertal		
+- fc_temp_jungfraujoch	
+- fc_temp_binn	
+- fc_temp_eggishorn	
+- fc_temp_visp	
+- fc_temp_m1	
+- fc_temp_m1_12h	
+- fc_is_m1_snow		
+- Massa|22_Q simule	
+- Massa|69_i	
+- Massa|69_T	
+- Massa|70_h	
+- Massa|71_h	
+- Massa|71_A	
+- Massa|73_H	
 - Massa|73_A
-- HourOfDaySinus
-- DayOfYearSinus
 
 hindcast_inputs:
-- streamflow_hindcast
-- Massa|22_Q simule
-- Massa|69_i
-- Massa|69_T
-- Massa|70_h
-- Massa|71_h
-- Massa|71_A
-- Massa|73_H
+- streamflow_hindcast	
+- noon	
+- june	
+- daylight		
+- ray_jungfrau	
+- ray_visp	
+- ray_eggishorn	
+- ray_m1		
+- prec_bruchji	
+- prec_fieschertal		
+- temp_jungfraujoch	
+- temp_binn	
+- temp_eggishorn	
+- temp_visp	
+- temp_m1	
+- temp_m1_12h	
+- is_m1_snow		
+- Massa|22_Q simule	
+- Massa|69_i	
+- Massa|69_T	
+- Massa|70_h	
+- Massa|71_h	
+- Massa|71_A	
+- Massa|73_H	
 - Massa|73_A
-- HourOfDaySinus
-- DayOfYearSinus
 
 forecast_inputs:
-- null_values
-- Massa|22_Q simule
-- Massa|69_i
-- Massa|69_T
-- Massa|70_h
-- Massa|71_h
-- Massa|71_A
-- Massa|73_H
+- null_values		
+- noon	
+- june	
+- daylight		
+- ray_jungfrau	
+- ray_visp	
+- ray_eggishorn	
+- ray_m1
+- fc_prec_bruchji	
+- fc_prec_fieschertal		
+- fc_temp_jungfraujoch	
+- fc_temp_binn	
+- fc_temp_eggishorn	
+- fc_temp_visp	
+- fc_temp_m1	
+- fc_temp_m1_12h	
+- fc_is_m1_snow		
+- Massa|22_Q simule	
+- Massa|69_i	
+- Massa|69_T	
+- Massa|70_h	
+- Massa|71_h	
+- Massa|71_A	
+- Massa|73_H	
 - Massa|73_A
-- HourOfDaySinus
-- DayOfYearSinus
 
 timestep_counter: true    # adds a feature that counts the time step in the sequence
 
@@ -110,22 +161,14 @@ model: "sequential_forecast_lstm"  # Model type (e.g. "lstm", "transformer", "ar
 head: "regression" 
 
 hidden_size:          256       # Model hidden size (int or dict)
-# hindcast_hidden_size: 256
-# forecast_hidden_size: 256
 
 output_activation: "linear"
-output_dropout: 0.1
+output_dropout: 0.01
 
 # LSTM
 lstm_dropout: 0.0           # Dropout probability (0–1).
 num_layers: 2               # Number of LSTM layers (int)
 initial_forget_bias: 1.5    # Initial bias value of the forget gate (0-3, high helps the model remember the past)
-
-# Handoff Sequential LSTM
-# state_handoff_network:
-#   hiddens: [128]
-#   activation: gelu
-#   dropout: 0.00
 
 # Add embedding for dynamical features
 # dynamics_embedding:
@@ -150,10 +193,10 @@ batch_size: 32  # Mini-batch size (int).
 optimizer: "AdamW"        # Specify optimizer [Adam. AdamW]
 loss: custom_loss         # Specify loss [MSE, NSE, RMSE, ...]
 
-seq_length: 220             # Input sequence length, in frequency of measure
-predict_last_n: 96         # Prediction horizon
+seq_length: 150             # Input sequence length, in frequency of measure
+predict_last_n: 24         # Prediction horizon
 
-forecast_seq_length: 96    # Must be < seq_length, length of sequence that uses the forecast features
+forecast_seq_length: 24    # Must be < seq_length, length of sequence that uses the forecast features
 forecast_overlap: null     # Must be <= forecast_seq_length
 
 custom_loss:              # Custom loss function
@@ -180,13 +223,13 @@ validate_n_random_basins: 1
 
 # NEED validate_every set to 1
 early_stopping: true
-patience_early_stopping:              10
-minimum_epochs_before_early_stopping: 15
+patience_early_stopping:              20
+minimum_epochs_before_early_stopping: 20
 min_delta_early_stopping:             1e-7
 
 # Dynamic LR
 dynamic_learning_rate: true
-patience_dynamic_learning_rate:       4     #6
+patience_dynamic_learning_rate:       5     #6
 factor_dynamic_learning_rate:         0.4   # Learning rate (float).
 
 # ==============================================================================
@@ -205,7 +248,7 @@ save_weights_every: 10
 verbose: 1                      # 0 = logs only, 1 = logs + progress
 
 save_best_enabled: true
-save_best_criterion: sum_metrics # or val_loss or one from ["MAPE", "MSE", "NSE"]
+save_best_criterion: sum_metrics # or val_loss
 
 save_in_csv: true
 # add the .csv automatically, just have to provide the name of the file
@@ -216,7 +259,7 @@ csv_metrics_name: Metrics_over_Experiments
 # ------------------------------------------------
 
 # Handling missing data
-nan_handling_method: masked_mean
+nan_handling_method: masked_mean       # e.g. "mask", "zero"
 nan_step_probability: 0.0
 nan_sequence_probability: 0.0
 nan_handling_pos_encoding_size: 0
