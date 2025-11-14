@@ -705,38 +705,59 @@ class BaseDataset(Dataset):
                 f"{', '.join(nan_basins)}. NSE loss values for these basins will be NaN."
             )
 
-    def _create_lookup_table(self, ds: xarray.Dataset) -> None:
-        """Create a lookup table mapping dataset index → (basin, indices_per_frequency)."""
-        lookup: list[tuple[str, list[int]]] = []
+    def _create_lookup_table(self, xr: xarray.Dataset):
+        """Create lookup table of (basin, time indices) and build per-basin tensors."""
+        lookup = []
         if not self._disable_pbar:
-            LOGGER.info("Create lookup table and convert to PyTorch tensor")
+            LOGGER.info("Create lookup table and convert to pytorch tensor")
 
-        basins_without_samples: list[str] = []
-        basin_coordinates = ds["basin"].values.tolist()
+        # list to collect basin ids without a single training sample
+        basins_without_samples = []
+        basin_coordinates = xr["basin"].values.tolist()
 
         for basin in tqdm(
-            basin_coordinates, file=sys.stdout, disable=self._disable_pbar, leave=False
+            basin_coordinates,
+            file=sys.stdout,
+            disable=self._disable_pbar,
+            leave=False,
         ):
-            # x_d: per frequency, dict[feature_name] -> np.ndarray (time, 1)
-            x_d: dict[str, dict[str, np.ndarray]] = {}
-            x_s: dict[str, np.ndarray] = {}
-            y: dict[str, np.ndarray] = {}
-            dates: dict[str, np.ndarray] = {}
+            # -----------------------------------------------------------------
+            # Build native-frequency DataFrame from xarray for this basin
+            # -----------------------------------------------------------------
+            ds_basin = xr.sel(basin=basin)          # slice xarray for one basin
+            df_native = ds_basin.to_dataframe()     # MultiIndex (date, basin)
 
-            # Keys: frequencies; values: mapping lowest-frequency sample index → index in this frequency
-            frequency_maps: dict[str, np.ndarray] = {}
+            # Drop 'basin' level from index, keep only time index
+            if isinstance(df_native.index, pd.MultiIndex):
+                df_native = df_native.reset_index("basin", drop=True)
+
+            # Ensure datetime index
+            df_native.index = pd.to_datetime(df_native.index)
+            df_native = df_native.sort_index()
+
+            # Containers per frequency
+            x_d, x_s, y, dates = {}, {}, {}, {}
+            frequency_maps = {}
+
+            # find lowest frequency (e.g., 'D') among cfg.use_frequencies
             lowest_freq = utils.sort_frequencies(self.frequencies)[0]
 
-            # Converting from xarray to pandas is faster for resampling
-            df_native = ds.sel(basin=basin).to_dataframe()
-
+            # -----------------------------------------------------------------
+            # Loop over frequencies and build dynamic/static/target arrays
+            # -----------------------------------------------------------------
             for freq in self.frequencies:
-                # Dynamic columns for this frequency; mass inputs first
+                # make sure that possible mass inputs are sorted to the beginning
+                # of the dynamic feature list
                 if isinstance(self.cfg.dynamic_inputs, list):
-                    dynamic_cols = self.cfg.mass_inputs + self.cfg.dynamic_inputs_flattened
+                    dynamic_cols = (
+                        self.cfg.mass_inputs + self.cfg.dynamic_inputs_flattened
+                    )
                 else:
-                    dynamic_cols = self.cfg.mass_inputs + self.cfg.dynamic_inputs[freq]
+                    dynamic_cols = (
+                        self.cfg.mass_inputs + self.cfg.dynamic_inputs[freq]
+                    )
 
+                # add dynamic_conceptual columns
                 dynamic_cols += self.cfg.dynamic_conceptual_inputs
 
                 df_resampled = df_native[
@@ -746,91 +767,142 @@ class BaseDataset(Dataset):
                     + self.cfg.autoregressive_inputs
                 ].resample(freq).mean()
 
-                # Dynamic inputs (per feature)
+                # pull all of the data that needs to be validated
                 x_d[freq] = {col: df_resampled[[col]].values for col in dynamic_cols}
-                # Targets
                 y[freq] = df_resampled[self.cfg.target_variables].values
-                # Evolving static-like inputs
                 if self.cfg.evolving_attributes:
                     x_s[freq] = df_resampled[self.cfg.evolving_attributes].values
 
-                # Dates
+                # store resampled dates
                 dates[freq] = df_resampled.index.to_numpy()
 
-                # Number of frequency steps in one lowest-frequency step
+                # number of frequency steps in one lowest-frequency step
                 frequency_factor = int(utils.get_frequency_factor(lowest_freq, freq))
+                # array position i is the last entry of this frequency that belongs
+                # to the lowest-frequency sample i.
                 if len(df_resampled) % frequency_factor != 0:
                     raise ValueError(
-                        f"The length of the dataframe at frequency {freq} is {len(df_resampled)} "
-                        f"(including warmup), which is not a multiple of {frequency_factor} "
-                        f"(factor between lowest frequency {lowest_freq} and {freq}). "
-                        f"Adjust the {self.period} start/end dates so that the period "
-                        f"(including warmup) length is divisible by {frequency_factor}."
+                        f"The length of the dataframe at frequency {freq} is "
+                        f"{len(df_resampled)} (including warmup), which is not a "
+                        f"multiple of {frequency_factor} (i.e., the factor between "
+                        f"the lowest frequency {lowest_freq} and the frequency {freq}. "
+                        f"To fix this, adjust the {self.period} start or end date such "
+                        f"that the period (including warmup) has a length that is "
+                        f"divisible by {frequency_factor}."
                     )
                 frequency_maps[freq] = (
                     np.arange(len(df_resampled) // frequency_factor) * frequency_factor
                     + (frequency_factor - 1)
                 )
 
-            # Store first date for period to be able to restore dates during inference
+            # store first date of sequence to be able to restore dates during inference
             if not self.is_train:
                 self.period_starts[basin] = pd.to_datetime(
-                    ds.sel(basin=basin)["date"].values[0]
+                    xr.sel(basin=basin)["date"].values[0]
                 )
 
-            # Validate samples using numba-accelerated function
+            # -----------------------------------------------------------------
+            # Validate samples (NaNs, sequence length, etc.)
+            # -----------------------------------------------------------------
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", category=NumbaPendingDeprecationWarning)
 
                 if self.is_train:
-                    # Concatenate features along last dimension for validation
+                    # one 2D array per frequency: (time, features)
                     x_d_validate = [
-                        np.concatenate(list(x_d[freq].values()), axis=-1)
+                        np.concatenate([v for v in x_d[freq].values()], axis=-1)
                         for freq in self.frequencies
                     ]
-                    x_s_validate = (
-                        [x_s[freq] for freq in self.frequencies] if x_s else None
-                    )
-                    y_validate = [y[freq] for freq in self.frequencies]
                 else:
-                    # During inference, we accept samples with NaNs in inputs
                     x_d_validate = None
-                    x_s_validate = None
-                    y_validate = None
 
                 flag = _validate_samples(
                     x_d=x_d_validate,
-                    x_s=x_s_validate,
-                    y=y_validate,
+                    x_s=[x_s[freq] for freq in self.frequencies]
+                    if self.is_train and x_s
+                    else None,
+                    y=[y[freq] for freq in self.frequencies] if self.is_train else None,
                     frequency_maps=[frequency_maps[freq] for freq in self.frequencies],
                     seq_length=self.seq_len,
                     predict_last_n=self._predict_last_n,
                 )
 
             # Concatenate autoregressive columns to dynamic inputs *after* validation,
-            # so as not to remove samples with missing AR inputs.
+            # so as to not remove samples with missing autoregressive inputs.
             if self.cfg.autoregressive_inputs:
                 if len(self.frequencies) > 1:
                     raise ValueError(
-                        "Autoregressive inputs are not supported for datasets with multiple frequencies."
+                        "Autoregressive inputs are not supported for datasets with "
+                        "multiple frequencies."
                     )
-                freq = self.frequencies[0]
-                x_d[freq].update(
-                    {col: df_resampled[[col]].values for col in self.cfg.autoregressive_inputs}
+                x_d[self.frequencies[0]].update(
+                    {col: df_resampled[[col]].values
+                     for col in self.cfg.autoregressive_inputs}
                 )
 
-            valid_samples = np.argwhere(flag == 1)
+            # -----------------------------------------------------------------
+            # Start from all valid samples (flag == 1)
+            # -----------------------------------------------------------------
+            valid_samples = np.argwhere(flag == 1).reshape(-1)
 
-            for idx in valid_samples:
-                # Store pointer to basin and this sample's index for each frequency
-                lookup.append(
-                    (
+            # =================================================================
+            # HIGH-FLOW FILTER (optional, controlled by cfg.high_flow_only)
+            # -----------------------------------------------------------------
+            # If cfg.high_flow_only is True, we keep only those sequences whose
+            # *final* target value (at the lowest frequency) is >= high_flow_threshold.
+            #
+            # If you want this only for TRAINING, change the condition to:
+            #   if self.is_train and getattr(self.cfg, "high_flow_only", False) ...
+            # =================================================================
+            if getattr(self.cfg, "high_flow_only", False) and valid_samples.size > 0:
+                lowest_freq = utils.sort_frequencies(self.frequencies)[0]
+
+                # which target to threshold on?
+                target_name = getattr(self.cfg, "high_flow_target", "streamflow")
+                if target_name not in self.cfg.target_variables:
+                    raise ValueError(
+                        f"high_flow_target='{target_name}' is not in "
+                        f"cfg.target_variables ({self.cfg.target_variables})."
+                    )
+                target_idx = self.cfg.target_variables.index(target_name)
+                threshold = getattr(self.cfg, "high_flow_threshold", 40.0)
+
+                # y at lowest frequency, currently in *normalized* units
+                y_low_norm = y[lowest_freq][:, target_idx]
+
+                # --- de-normalize using the scaler ---
+                center = float(self.scaler["xarray_feature_center"][target_name])
+                scale = float(self.scaler["xarray_feature_scale"][target_name])
+                y_low_phys = y_low_norm * scale + center
+                # -------------------------------------
+
+                # last index in lowest_freq for each valid sample
+                last_idx_low = frequency_maps[lowest_freq][valid_samples]
+
+                # keep only samples whose final *physical* target is >= threshold
+                high_mask = y_low_phys[last_idx_low] >= threshold
+
+                # (optional) debug logging if everything is filtered out
+                if not np.any(high_mask):
+                    LOGGER.warning(
+                        "High-flow filter removed all samples in basin %s "
+                        "(threshold=%s, target=%s).",
                         basin,
-                        [frequency_maps[freq][int(idx)] for freq in self.frequencies],
+                        threshold,
+                        target_name,
                     )
+
+                valid_samples = valid_samples[high_mask]
+
+            # -----------------------------------------------------------------
+            # Store pointer to basin and sample index for each frequency
+            # -----------------------------------------------------------------
+            for f in valid_samples:
+                lookup.append(
+                    (basin, [frequency_maps[freq][int(f)] for freq in self.frequencies])
                 )
 
-            # Only store basin data if there is at least one valid sample
+            # only store data if this basin has at least one valid sample
             if valid_samples.size > 0:
                 if self.cfg.forecast_inputs_flattened and not self.cfg.hindcast_inputs_flattened:
                     raise ValueError(
@@ -839,19 +911,19 @@ class BaseDataset(Dataset):
 
                 self._x_d[basin] = {
                     freq: {
-                        feature_name: torch.from_numpy(values.astype(np.float32))
-                        for feature_name, values in freq_dict.items()
+                        k: torch.from_numpy(v.astype(np.float32))
+                        for k, v in _x_d.items()
                     }
-                    for freq, freq_dict in x_d.items()
+                    for freq, _x_d in x_d.items()
                 }
                 self._y[basin] = {
-                    freq: torch.from_numpy(vals.astype(np.float32))
-                    for freq, vals in y.items()
+                    freq: torch.from_numpy(_y.astype(np.float32))
+                    for freq, _y in y.items()
                 }
                 if x_s:
                     self._x_s[basin] = {
-                        freq: torch.from_numpy(vals.astype(np.float32))
-                        for freq, vals in x_s.items()
+                        freq: torch.from_numpy(_x_s.astype(np.float32))
+                        for freq, _x_s in x_s.items()
                     }
                 self._dates[basin] = dates
             else:
@@ -864,14 +936,18 @@ class BaseDataset(Dataset):
                 basins_without_samples,
             )
 
-        # Map integer index → (basin, indices_per_frequency)
         self.lookup_table = {i: elem for i, elem in enumerate(lookup)}
         self.num_samples = len(self.lookup_table)
 
         if self.num_samples == 0:
             if self.is_train:
                 raise NoTrainDataError
-            raise NoEvaluationDataError
+            else:
+                LOGGER.warning(
+                    "No samples found in %s period for the given configuration.",
+                    self.period,
+                )
+
 
     # --------------------------------------------------------------------- #
     # Static attributes

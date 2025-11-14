@@ -6,7 +6,7 @@
 # Project & Paths
 # ==============================================================================
 
-experiment_name: "peak1"  # Name used for run folders/logs
+experiment_name: "normal"  # Name used for run folders/logs
 base_run_dir: ./runs      # Base directory for experiment runs
 
 img_log_dir: null         # Directory for saving image logs
@@ -83,9 +83,9 @@ clip_targets_to_zero:
   - streamflow
 
 # Only keep sequences whose last target 'streamflow' > 40
-high_flow_only: true
-high_flow_target: streamflow   # must be in cfg.target_variables
-high_flow_threshold: 40.0
+# high_flow_only: true
+# high_flow_target: streamflow   # must be in cfg.target_variables
+# high_flow_threshold: 40.0
 
 # custom_normalization:
 #   streamflow: 
@@ -114,7 +114,7 @@ high_flow_threshold: 40.0
 model: "sequential_forecast_lstm"  # Model type (e.g. "lstm", "transformer", "arlstm")
 head: "regression" 
 
-hidden_size:          64       # Model hidden size (int or dict)
+hidden_size:          256       # Model hidden size (int or dict)
 # hindcast_hidden_size: 256
 # forecast_hidden_size: 256
 
@@ -123,7 +123,7 @@ output_dropout: 0.1
 
 # LSTM
 lstm_dropout: 0.0           # Dropout probability (0–1).
-num_layers: 1               # Number of LSTM layers (int)
+num_layers: 2               # Number of LSTM layers (int)
 initial_forget_bias: 1.5    # Initial bias value of the forget gate (0-3, high helps the model remember the past)
 
 # Handoff Sequential LSTM
@@ -150,7 +150,7 @@ initial_forget_bias: 1.5    # Initial bias value of the forget gate (0-3, high h
 epochs: 10000
 learning_rate: 1e-3
 
-batch_size: 64  # Mini-batch size (int).
+batch_size: 32  # Mini-batch size (int).
 
 optimizer: "AdamW"        # Specify optimizer [Adam. AdamW]
 loss: custom_loss         # Specify loss [MSE, NSE, RMSE, ...]
@@ -167,9 +167,9 @@ custom_loss:              # Custom loss function
   - nse
   - mse
   weights:
-  - 0.5
+  - 0.7
   - 0.2
-  - 0.3
+  - 0.1
 
 clip_gradient_norm: 5.0   # Avoids exploding gradients
 
@@ -185,8 +185,8 @@ validate_n_random_basins: 1
 
 # NEED validate_every set to 1
 early_stopping: true
-patience_early_stopping:              10
-minimum_epochs_before_early_stopping: 15
+patience_early_stopping:              20
+minimum_epochs_before_early_stopping: 20
 min_delta_early_stopping:             1e-7
 
 # Dynamic LR
