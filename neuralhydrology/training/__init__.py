@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 import warnings
 from typing import List
@@ -12,111 +14,129 @@ LOGGER = logging.getLogger(__name__)
 
 
 def get_optimizer(model: torch.nn.Module, cfg: Config) -> torch.optim.Optimizer:
-    """Get specific optimizer object, depending on the run configuration.
-    
-    Currently only 'Adam' and 'AdamW' are supported.
-    
+    """Return optimizer instance based on configuration.
+
+    Currently supported:
+    - 'Adam'
+    - 'AdamW'
+
     Parameters
     ----------
     model : torch.nn.Module
-        The model to be optimized.
+        Model to be optimized.
     cfg : Config
-        The run configuration.
+        Run configuration containing optimizer settings.
 
     Returns
     -------
     torch.optim.Optimizer
-        Optimizer object that can be used for model training.
+        Configured optimizer.
     """
-    if cfg.optimizer.lower() == "adam":
+    opt_name = cfg.optimizer.lower()
+
+    if opt_name == "adam":
         optimizer = torch.optim.Adam(model.parameters(), lr=cfg.learning_rate[0])
-    elif cfg.optimizer.lower() == "adamw":
+    elif opt_name == "adamw":
         optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.learning_rate[0])
     else:
-        raise NotImplementedError(f"{cfg.optimizer} not implemented or not linked in `get_optimizer()`")
+        raise NotImplementedError(
+            f"{cfg.optimizer} not implemented or not linked in `get_optimizer()`"
+        )
 
     return optimizer
 
-def get_custom_loss(cfg):
-    combined = loss.CombinedLoss(cfg, losses_list_str=cfg.custom_loss['losses'], weights=cfg.custom_loss['weights'])
-    return combined
+
+def get_custom_loss(cfg: Config) -> loss.BaseLoss:
+    """Build a CombinedLoss object from the 'custom_loss' configuration."""
+    return loss.CombinedLoss(
+        cfg,
+        losses_list_str=cfg.custom_loss["losses"],
+        weights=cfg.custom_loss["weights"],
+    )
 
 
 def get_loss_obj(cfg: Config) -> loss.BaseLoss:
-    """Get loss object, depending on the run configuration.
-    
-    Currently supported are 'MSE', 'NSE', 'RMSE', 'GMMLoss', 'CMALLoss', and 'UMALLoss'.
-    
-    Parameters
-    ----------
-    cfg : Config
-        The run configuration.
+    """Return the loss object specified in the configuration.
 
-    Returns
-    -------
-    loss.BaseLoss
-        A new loss instance that implements the loss specified in the config or, if different, the loss required by the 
-        head.
+    Supported:
+    - 'MSE'         → MaskedMSELoss
+    - 'NSE'         → MaskedNSELoss
+    - 'RMSE'        → MaskedRMSELoss
+    - 'GMMLoss'     → MaskedGMMLoss
+    - 'CMALLoss'    → MaskedCMALLoss
+    - 'UMALLoss'    → MaskedUMALLoss
+    - 'custom_loss' → CombinedLoss (from cfg.custom_loss)
+    - 'MAPE'        → MaskedMAPELoss
+    - 'SMAPE'       → MaskedSMAPELoss
     """
-    if cfg.loss.lower() == "mse":
+    name = cfg.loss.lower()
+
+    if name == "mse":
         loss_obj = loss.MaskedMSELoss(cfg)
-    elif cfg.loss.lower() == "nse":
+    elif name == "nse":
         loss_obj = loss.MaskedNSELoss(cfg)
-    elif cfg.loss.lower() == "weightednse":
-        warnings.warn("'WeightedNSE loss has been removed. Use 'NSE' with 'target_loss_weights'", FutureWarning)
+    elif name == "weightednse":
+        warnings.warn(
+            "'WeightedNSE' loss has been removed. Use 'NSE' with 'target_loss_weights' instead.",
+            FutureWarning,
+        )
         loss_obj = loss.MaskedNSELoss(cfg)
-    elif cfg.loss.lower() == "rmse":
+    elif name == "rmse":
         loss_obj = loss.MaskedRMSELoss(cfg)
-    elif cfg.loss.lower() == "gmmloss":
+    elif name == "gmmloss":
         loss_obj = loss.MaskedGMMLoss(cfg)
-    elif cfg.loss.lower() == "cmalloss":
+    elif name == "cmalloss":
         loss_obj = loss.MaskedCMALLoss(cfg)
-    elif cfg.loss.lower() == "umalloss":
+    elif name == "umalloss":
         loss_obj = loss.MaskedUMALLoss(cfg)
-    elif cfg.loss.lower() == "custom_loss":
+    elif name == "custom_loss":
         loss_obj = get_custom_loss(cfg)
-    elif cfg.loss.lower() == "mape":
-        loss_obj =loss.MaskedMAPELoss(cfg)
-    elif cfg.loss.lower() == "smape":
-        loss_obj =loss.MaskedSMAPELoss(cfg)
+    elif name == "mape":
+        loss_obj = loss.MaskedMAPELoss(cfg)
+    elif name == "smape":
+        loss_obj = loss.MaskedSMAPELoss(cfg)
     else:
-        raise NotImplementedError(f"{cfg.loss} not implemented or not linked in `get_loss()`")
+        raise NotImplementedError(f"{cfg.loss} not implemented or not linked in `get_loss_obj()`")
 
     return loss_obj
 
 
-
-
 def get_regularization_obj(cfg: Config) -> List[regularization.BaseRegularization]:
-    """Get list of regularization objects.
-    
-    Currently, only the 'tie_frequencies' regularization is implemented.
-    
-    Parameters
-    ----------
-    cfg : Config
-        The run configuration.
+    """Return list of regularization objects specified in the configuration.
 
-    Returns
-    -------
-    List[regularization.BaseRegularization]
-        List of regularization objects that will be added to the loss during training.
+    Supported entries in cfg.regularization:
+    - 'tie_frequencies'
+    - 'forecast_overlap'
+    - 'l2' (weight decay wrapper)
+
+    Each entry may be:
+    - 'name'                  → uses default weight 1.0
+    - ('name', weight: float) → custom weight
     """
-    regularization_modules = []
+    regularization_modules: list[regularization.BaseRegularization] = []
+
     for reg_item in cfg.regularization:
         if isinstance(reg_item, str):
             reg_name = reg_item
             reg_weight = 1.0
         else:
             reg_name, reg_weight = reg_item
+
         if reg_name == "tie_frequencies":
-            regularization_modules.append(regularization.TiedFrequencyMSERegularization(cfg=cfg, weight=reg_weight))
+            regularization_modules.append(
+                regularization.TiedFrequencyMSERegularization(cfg=cfg, weight=reg_weight)
+            )
         elif reg_name == "forecast_overlap":
-            regularization_modules.append(regularization.ForecastOverlapMSERegularization(cfg=cfg, weight=reg_weight))
+            regularization_modules.append(
+                regularization.ForecastOverlapMSERegularization(cfg=cfg, weight=reg_weight)
+            )
         elif reg_name == "l2":
-            # print("Using L2 regularization (weight decay).")
-            regularization_modules.append(regularization.L2Regularization(cfg=cfg, weight=reg_weight))
+            regularization_modules.append(
+                regularization.L2Regularization(cfg=cfg, weight=reg_weight)
+            )
         else:
-            raise NotImplementedError(f"{reg_name} not implemented or not linked in `get_regularization_obj()`.")
+            raise NotImplementedError(
+                f"{reg_name} not implemented or not linked in `get_regularization_obj()`."
+            )
 
     return regularization_modules

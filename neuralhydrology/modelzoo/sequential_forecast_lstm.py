@@ -10,117 +10,123 @@ from neuralhydrology.utils.config import Config
 
 
 class SequentialForecastLSTM(BaseModel):
-    """A forecasting model that uses a single LSTM sequence with multiple embedding layers.
+    """Single-LSTM model that rolls through hindcast + forecast in one sequence.
 
-    This is a forecasting model that uses a single sequential (LSTM) model that rolls 
-    out through both the hindcast and forecast sequences. The difference between this
-    and a standard ``CudaLSTM`` is (1) this model uses both hindcast and forecast
-    input features, and (2) it uses a separate embedding network for the hindcast
-    period and the forecast period. 
-    
-    Do not use this model with ``forecast_overlap`` > 0.
+    Compared to a standard CudaLSTM, this model:
+    - Uses separate embedding networks for hindcast and forecast.
+    - Concatenates hindcast and forecast sequences in time and runs one LSTM over both.
+    - Returns only the last `predict_last_n` steps (forecast part) via ``y_hat``.
 
-    Parameters
-    ----------
-    cfg : Config
-        The run configuration.
-
-    Raises
-    ------
-    ValueError if forecast_overlap > 0
-    ValueError if forecast and hindcast embedding nets have different output sizes.
+    Note
+    ----
+    - Do not use this model with ``forecast_overlap > 0``.
     """
-    # specify submodules of the model that can later be used for finetuning. Names must match class attributes
-    module_parts = ['hindcast_embedding_net', 'forecast_embedding_net', 'lstm', 'dropout', 'head']
-    def __init__(self, cfg: Config):
-        self._predict_last_n = cfg.predict_last_n
-        super(SequentialForecastLSTM, self).__init__(cfg=cfg)
-        if cfg.forecast_overlap:
-            raise ValueError('Forecast overlap cannot be set for a sequential forecasting model. '
-                             'Please set to None or remove from config file.')
 
-        # output : (L_subseq, batch, hidden_emb)
-        self.forecast_embedding_net = InputLayer(cfg, embedding_type='forecast')
-        self.hindcast_embedding_net = InputLayer(cfg, embedding_type='hindcast')
+    # Submodules that can be used for fine-tuning
+    module_parts = ["hindcast_embedding_net", "forecast_embedding_net", "lstm", "dropout", "head"]
+
+    def __init__(self, cfg: Config) -> None:
+        # Handle predict_last_n being int or dict (single-frequency case)
+        predict_last_n = cfg.predict_last_n
+        if isinstance(predict_last_n, dict):
+            # Single-frequency: just take the first value
+            predict_last_n = next(iter(predict_last_n.values()))
+        self._predict_last_n: int = int(predict_last_n)
+
+        super().__init__(cfg=cfg)
+
+        if cfg.forecast_overlap:
+            raise ValueError(
+                "Forecast overlap cannot be set for a sequential forecasting model. "
+                "Please set it to 0 or remove it from the config file."
+            )
+
+        # Embedding networks for hindcast and forecast dynamic/static inputs
+        # Output shape: (seq_len, batch, embedding_dim)
+        self.hindcast_embedding_net = InputLayer(cfg, embedding_type="hindcast")
+        self.forecast_embedding_net = InputLayer(cfg, embedding_type="forecast")
 
         if self.forecast_embedding_net.output_size != self.hindcast_embedding_net.output_size:
-            raise ValueError('Forecast and hindcast embedding nets must have the same output size when using a sequential forecast LSTM.')
+            raise ValueError(
+                "Forecast and hindcast embedding nets must have the same output size when "
+                "using a SequentialForecastLSTM."
+            )
 
         self.lstm = nn.LSTM(
             input_size=self.forecast_embedding_net.output_size,
             hidden_size=cfg.hidden_size,
             num_layers=cfg.num_layers,
-            dropout=cfg.lstm_dropout
+            dropout=cfg.lstm_dropout,
         )
 
         self.dropout = nn.Dropout(p=cfg.output_dropout)
 
+        # Head expects (batch, seq_len, hidden); see forward() for actual usage
         self.head = get_head(cfg=cfg, n_in=cfg.hidden_size, n_out=self.output_size)
 
         self._reset_parameters()
 
-    def _reset_parameters(self):
+    # ------------------------------------------------------------------ #
+    # Initialization helpers
+    # ------------------------------------------------------------------ #
+    def _reset_parameters(self) -> None:
         """Special initialization of certain model weights.
 
-        If `initial_forget_bias` is specified, we initialize the forget gate bias to this value.
+        If `initial_forget_bias` is specified, initialize the forget gate bias.
         """
-        if self.cfg.initial_forget_bias is not None:
-            # Initialize the forget gate bias to a constant value.
-            self.lstm.bias_hh_l0.data[self.cfg.hidden_size:2 * self.cfg.hidden_size] = self.cfg.initial_forget_bias
+        if self.cfg.initial_forget_bias is None:
+            return
 
+        # Forget gate is second quarter of the bias vector for LSTM
+        b = float(self.cfg.initial_forget_bias)
+        h = self.cfg.hidden_size
 
-        
-    def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
+        with torch.no_grad():
+            if hasattr(self.lstm, "bias_hh_l0"):
+                self.lstm.bias_hh_l0[h : 2 * h].fill_(b)
+            if hasattr(self.lstm, "bias_ih_l0"):
+                self.lstm.bias_ih_l0[h : 2 * h].fill_(b)
+
+    # ------------------------------------------------------------------ #
+    # Forward pass
+    # ------------------------------------------------------------------ #
+    def forward(
+        self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]
+    ) -> Dict[str, torch.Tensor]:
         """Perform a forward pass on the SequentialForecastLSTM model.
 
         Parameters
         ----------
-        data : dict[str, torch.Tensor | dict[str, torch.Tensor]]
-            Dictionary, containing input features as key-value pairs.
+        data : dict
+            Dictionary containing input features as key-value pairs.
 
         Returns
         -------
-        Dict[str, torch.Tensor]
-            A dictionary containing the model predictions.
-                - y_hat: last 'predict_last_n' predictions
+        dict
+            - ``y_hat``: last `predict_last_n` predictions (forecast part).
         """
-        # possibly pass dynamic and static inputs through embedding layers, then concatenate them
+        # Embedding of hindcast and forecast inputs; each: (seq_len, batch, emb_dim)
         x_h = self.hindcast_embedding_net(data)
         x_f = self.forecast_embedding_net(data)
-        # when no embedding is provided, returns a tensor of shape 
-        # (seq_L(hind|fore), batch size, number of features)
 
-        # print("\nShape of input (SequentialLSTM), after 'embedding' ")
-        # print(x_h.shape)
-        # print(x_f.shape)
-
-        # combine sequences on seq-dim (seq, batch, hidden or num_Feat when not embedding)
+        # Concatenate along time dimension: (seq_total, batch, emb_dim)
         x_combined = torch.cat([x_h, x_f], dim=0)
 
-        # run LSTM -> (seq_in_LSTM, batch, hidden or num_feat)
-        lstm_out, (h_n, c_n) = self.lstm(x_combined)
+        # LSTM expects (seq_len, batch, input_size)
+        lstm_out, _ = self.lstm(x_combined)
+        # -> (batch, seq_len, hidden_size)
         lstm_out = lstm_out.transpose(0, 1)
-        # returns (batch, seq_tot, hidden_lstm)
-        # print("LSTM out", lstm_out.shape)
 
         head_in = self.dropout(lstm_out)
 
-        # Run head - heads may return a tensor or a dict with 'y_hat'
+        # Head must return a dict with 'y_hat'
         pred = self.head(head_in)
+        if not isinstance(pred, dict) or "y_hat" not in pred:
+            raise ValueError("Head output must be a dictionary containing a 'y_hat' tensor.")
 
-        # The head might return a dict, and we are interested in 'y_hat'.
-        # If it's not a dict, we assume the tensor is the prediction.
-        if not isinstance(pred, dict) or 'y_hat' not in pred:
-            raise ValueError("Head output must be a dictionary containing a 'y_hat' tensor")
-        
-        y_hat_full = pred['y_hat']
-        
-        # y_hat_hindcast = y_hat_full[:, :-self._predict_last_n, :]
-        y_hat_predicted = y_hat_full[:, -self._predict_last_n:, :]
+        y_hat_full = pred["y_hat"]  # (batch, seq_total, n_targets)
 
-        # The training loop expects 'y_hat', so we provide the concatenated version.
-        # Specific evaluation can be done on the hindcast/forecast parts.
-        return {
-            'y_hat': y_hat_predicted
-        }
-    
+        # Keep only last predict_last_n steps (forecast part)
+        y_hat_predicted = y_hat_full[:, -self._predict_last_n :, :]
+
+        return {"y_hat": y_hat_predicted}

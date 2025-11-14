@@ -12,34 +12,45 @@ from ruamel.yaml import YAML
 
 
 class Config(object):
-    """Read run configuration from the specified path or dictionary and parse it into a configuration object.
+    """Configuration helper for NeuralHydrology-style runs.
 
-    During parsing, config keys that contain 'dir', 'file', or 'path' will be converted to pathlib.Path instances.
-    Configuration keys ending with '_date' will be parsed to pd.Timestamps. The expected format is DD/MM/YYYY.
+    Reads a YAML file or a Python dict, parses paths and dates, and exposes all
+    config entries as properties with sensible defaults / type conversions.
+
+    During parsing:
+
+    - Keys containing 'dir', 'file', or 'path' are converted to `pathlib.Path`.
+    - Keys ending with '_date' are parsed to `pandas.Timestamp` (or lists thereof),
+      with expected format ``DD/MM/YYYY``.
+    - Some arguments (e.g. learning_rate) can be specified in multiple forms and
+      are normalized here.
 
     Parameters
     ----------
     yml_path_or_dict : Union[Path, dict]
         Either a path to the config file or a dictionary of configuration values.
     dev_mode : bool, optional
-        If dev_mode is off, the config creation will fail if there are unrecognized keys in the passed config
-        specification. dev_mode can be activated either through this parameter or by setting ``dev_mode: True``
-        in `yml_path_or_dict`.
+        If dev_mode is off, unknown keys will raise a ValueError. You can enable
+        dev_mode either via this parameter or by setting ``dev_mode: True`` in
+        the passed YAML / dict.
 
     Raises
     ------
     ValueError
-        If the passed configuration specification is neither a Path nor a dict or if `dev_mode` is off (default) and
-        the config file or dict contain unrecognized keys.
+        If input is neither a Path nor a dict, or when unknown keys are present
+        and dev_mode is not enabled.
     """
 
-    # Lists of deprecated config keys and purely informational metadata keys, needed when checking for unrecognized
-    # config keys since these keys are not properties of the Config class.
+    # Keys that are allowed in config but not represented as properties
     _deprecated_keys = [
-        'static_inputs', 'camels_attributes', 'target_variable', 'embedding_hiddens', 'embedding_activation',
-        'embedding_dropout'
+        "static_inputs",
+        "camels_attributes",
+        "target_variable",
+        "embedding_hiddens",
+        "embedding_activation",
+        "embedding_dropout",
     ]
-    _metadata_keys = ['package_version', 'commit_hash']
+    _metadata_keys = ["package_version", "commit_hash"]
 
     def __init__(self, yml_path_or_dict: Union[Path, dict], dev_mode: bool = False):
         if isinstance(yml_path_or_dict, Path):
@@ -47,56 +58,63 @@ class Config(object):
         elif isinstance(yml_path_or_dict, dict):
             self._cfg = Config._parse_config(yml_path_or_dict)
         else:
-            raise ValueError(f'Cannot create a config from input of type {type(yml_path_or_dict)}.')
+            raise ValueError(
+                f"Cannot create a config from input of type {type(yml_path_or_dict)}."
+            )
 
-        if not (self._cfg.get('dev_mode', False) or dev_mode):
+        # Validate keys unless dev_mode is enabled
+        if not (self._cfg.get("dev_mode", False) or dev_mode):
             Config._check_cfg_keys(self._cfg)
 
-        # Adjust experiment name
+        # Adjust experiment name (expand templates, sanitize)
         if "experiment_name" in self._cfg and self._cfg["experiment_name"]:
-            # 1. Replace curly-bracketed entries
             new_name = self._cfg["experiment_name"]
+
+            # 1) Replace curly-bracketed date entries
             for key, val in self._cfg.items():
-                if key.endswith('_date'):
+                if key.endswith("_date"):
                     if isinstance(val, list):
-                        date_string = '_'.join(elem.strftime('%Y-%m-%d') for elem in val)
+                        date_string = "_".join(elem.strftime("%Y-%m-%d") for elem in val)
                     else:
-                        date_string = val.strftime('%Y-%m-%d')
-                    new_name = re.sub(f'{{{key}}}', date_string, new_name)
-            new_name = re.sub('{random_name}', create_random_name(), new_name)
+                        date_string = val.strftime("%Y-%m-%d")
+                    new_name = re.sub(f"{{{key}}}", date_string, new_name)
+
+            # 2) Replace {random_name} and any {key} placeholders
+            new_name = re.sub("{random_name}", create_random_name(), new_name)
             try:
                 new_name = new_name.format(**self._cfg)
             except KeyError as ex:
-                raise KeyError(f'Experiment name is {self._cfg["experiment_name"]} ' +
-                               f'but {{{ex}}} was not found in config.') from ex
-            # 2. Remove curly brackets and make sure experiment name can be used as folder in Linux and Windows
-            new_name = re.sub('{', "(", new_name)
-            new_name = re.sub('}', ")", new_name)
+                raise KeyError(
+                    f'Experiment name is {self._cfg["experiment_name"]} but {{{ex}}} was not found in config.'
+                ) from ex
+
+            # 3) Make sure experiment name can be used as folder in Linux and Windows
+            new_name = re.sub("{", "(", new_name)
+            new_name = re.sub("}", ")", new_name)
             new_name = re.sub('"', "'", new_name)
-            new_name = re.sub('[<>:"/\\\\|?*]', "_", new_name)
-            new_name = re.sub(' ', '', new_name)
+            new_name = re.sub(r'[<>:"/\\|?*]', "_", new_name)
+            new_name = re.sub(" ", "", new_name)
 
             self._cfg["experiment_name"] = new_name
 
+    # ------------------------------------------------------------------ #
+    # Basic helpers
+    # ------------------------------------------------------------------ #
     def as_dict(self) -> dict:
-        """Return run configuration as dictionary.
-        
-        Returns
-        -------
-        dict
-            The run configuration, as defined in the .yml file.
-        """
+        """Return the underlying configuration dictionary."""
         return self._cfg
 
-    def dump_config(self, folder: Path, filename: str = 'config.yml'):
-        """Save the run configuration as a .yml file to disk.
+    def dump_config(self, folder: Path, filename: str = "config.yml") -> None:
+        """Save the run configuration as a YAML file.
+
+        Paths are converted to strings; timestamps to DD/MM/YYYY strings.
 
         Parameters
         ----------
         folder : Path
             Folder in which the configuration will be stored.
         filename : str, optional
-            Name of the file that will be stored. Default: 'config.yml'.
+            File name (default: 'config.yml').
 
         Raises
         ------
@@ -104,162 +122,162 @@ class Config(object):
             If the specified folder already contains a file named `filename`.
         """
         yml_path = folder / filename
-        if not yml_path.exists():
-            with yml_path.open('w', encoding="utf-8") as fp:
-                temp_cfg = {}
-                for key, val in self._cfg.items():
-                    if any([key.endswith(x) for x in ['_dir', '_path', '_file', '_files']]):
-                        if isinstance(val, list):
-                            temp_list = []
-                            for elem in val:
-                                temp_list.append(str(elem))
-                            temp_cfg[key] = temp_list
-                        else:
-                            temp_cfg[key] = str(val)
-                    elif key.endswith('_date'):
-                        if isinstance(val, list):
-                            temp_list = []
-                            for elem in val:
-                                temp_list.append(elem.strftime(format="%d/%m/%Y"))
-                            temp_cfg[key] = temp_list
-                        else:
-                            # Ignore None's due to e.g. using a per_basin_period_file
-                            if isinstance(val, pd.Timestamp):
-                                temp_cfg[key] = val.strftime(format="%d/%m/%Y")
-                    else:
-                        temp_cfg[key] = val
-
-                yaml = YAML()
-                yaml.dump(dict(OrderedDict(sorted(temp_cfg.items()))), fp)
-        else:
+        if yml_path.exists():
             raise FileExistsError(yml_path)
 
-    def update_config(self, yml_path_or_dict: Union[Path, dict], dev_mode: bool = False):
-        """Update config arguments.
-        
-        Useful e.g. in the context of fine-tuning or when continuing to train from a checkpoint to adapt for example the
-        learning rate, train basin files or anything else.
-        
+        with yml_path.open("w", encoding="utf-8") as fp:
+            temp_cfg: dict[str, Any] = {}
+            for key, val in self._cfg.items():
+                # convert paths to str
+                if any(key.endswith(x) for x in ["_dir", "_path", "_file", "_files"]):
+                    if isinstance(val, list):
+                        temp_cfg[key] = [str(elem) for elem in val]
+                    else:
+                        temp_cfg[key] = str(val)
+                # convert dates to dd/mm/yyyy
+                elif key.endswith("_date"):
+                    if isinstance(val, list):
+                        temp_cfg[key] = [
+                            elem.strftime(format="%d/%m/%Y") for elem in val
+                        ]
+                    else:
+                        if isinstance(val, pd.Timestamp):
+                            temp_cfg[key] = val.strftime(format="%d/%m/%Y")
+                else:
+                    temp_cfg[key] = val
+
+            yaml = YAML()
+            yaml.dump(dict(OrderedDict(sorted(temp_cfg.items()))), fp)
+
+    def update_config(
+        self, yml_path_or_dict: Union[Path, dict], dev_mode: bool = False
+    ) -> None:
+        """Update config arguments from another YAML or dict.
+
+        Useful e.g. for fine-tuning or continue-training: new values overwrite
+        existing ones, others are kept.
+
         Parameters
         ----------
         yml_path_or_dict : Union[Path, dict]
-            Either a path to the new config file or a dictionary of configuration values. Each argument specified in
-            this file will overwrite the existing config argument.
+            Path or dict containing config items to overwrite.
         dev_mode : bool, optional
-            If dev_mode is off, the config creation will fail if there are unrecognized keys in the passed config
-            specification. dev_mode can be activated either through this parameter or by setting ``dev_mode: True``
-            in `yml_path_or_dict`.
-
-        Raises
-        ------
-        ValueError
-            If the passed configuration specification is neither a Path nor a dict, or if `dev_mode` is off (default)
-            and the config file or dict contain unrecognized keys.
+            If False (default), unrecognized keys will raise an error.
         """
         new_config = Config(yml_path_or_dict, dev_mode=dev_mode)
-
         self._cfg.update(new_config.as_dict())
 
-    def _get_value_verbose(self, key: str) -> Union[float, int, str, list, dict, Path, pd.Timestamp]:
-        """Use this function internally to return attributes of the config that are mandatory"""
-        if key not in self._cfg.keys():
+    def _get_value_verbose(
+        self, key: str
+    ) -> Union[float, int, str, list, dict, Path, pd.Timestamp]:
+        """Return a mandatory config value, raising if it's missing or None."""
+        if key not in self._cfg:
             raise ValueError(f"{key} is not specified in the config (.yml).")
-        elif self._cfg[key] is None:
+        if self._cfg[key] is None:
             raise ValueError(f"{key} is mandatory but 'None' in the config.")
-        else:
-            return self._cfg[key]
+        return self._cfg[key]
 
     @staticmethod
     def _as_default_list(value: Any) -> list:
         if value is None:
             return []
-        elif isinstance(value, list):
+        if isinstance(value, list):
             return value
-        else:
-            return [value]
+        return [value]
 
     @staticmethod
     def _as_default_dict(value: Any) -> dict:
         if value is None:
             return {}
-        elif isinstance(value, dict):
+        if isinstance(value, dict):
             return value
-        else:
-            raise RuntimeError(f"Incompatible type {type(value)}. Expected `dict` or `None`.")
+        raise RuntimeError(f"Incompatible type {type(value)}. Expected `dict` or `None`.")
 
+    # ------------------------------------------------------------------ #
+    # Config validation / parsing
+    # ------------------------------------------------------------------ #
     @staticmethod
-    def _check_cfg_keys(cfg: dict):
-        """Checks the config for unknown keys. """
-        property_names = [p for p in dir(Config) if isinstance(getattr(Config, p), property)]
+    def _check_cfg_keys(cfg: dict) -> None:
+        """Check for unknown config keys (when dev_mode is disabled)."""
+        property_names = [
+            p for p in dir(Config) if isinstance(getattr(Config, p), property)
+        ]
 
         unknown_keys = [
-            k for k in cfg.keys()
-            if k not in property_names and k not in Config._deprecated_keys and k not in Config._metadata_keys
+            k
+            for k in cfg.keys()
+            if k not in property_names
+            and k not in Config._deprecated_keys
+            and k not in Config._metadata_keys
         ]
         if unknown_keys:
-            raise ValueError(f'{unknown_keys} are not recognized config keys.')
+            raise ValueError(f"{unknown_keys} are not recognized config keys.")
 
     @staticmethod
     def _parse_config(cfg: dict) -> dict:
-        for key, val in cfg.items():
-            # convert all path strings to PosixPath objects
-            if any([key.endswith(x) for x in ['_dir', '_path', '_file', '_files']]):
+        """Parse and normalize a raw config dictionary."""
+        for key, val in list(cfg.items()):
+            # convert all path strings to Path objects
+            if any(key.endswith(x) for x in ["_dir", "_path", "_file", "_files"]):
                 if (val is not None) and (val != "None"):
                     if isinstance(val, list):
-                        temp_list = []
-                        for element in val:
-                            temp_list.append(Path(element))
-                        cfg[key] = temp_list
+                        cfg[key] = [Path(element) for element in val]
                     else:
                         cfg[key] = Path(val)
                 else:
                     cfg[key] = None
 
-            # convert Dates to pandas Datetime indexs
-            elif key.endswith('_date'):
+            # convert Dates to pandas Timestamp(s)
+            elif key.endswith("_date"):
                 if isinstance(val, list):
-                    temp_list = []
-                    for elem in val:
-                        temp_list.append(pd.to_datetime(elem, format='%d/%m/%Y'))
-                    cfg[key] = temp_list
+                    cfg[key] = [
+                        pd.to_datetime(elem, format="%d/%m/%Y") for elem in val
+                    ]
                 else:
-                    cfg[key] = pd.to_datetime(val, format='%d/%m/%Y')
-
-            else:
-                pass
+                    cfg[key] = pd.to_datetime(val, format="%d/%m/%Y")
 
         # Check forecast sequence length.
-        if cfg.get('forecast_seq_length'):
-            if cfg['forecast_seq_length'] >= cfg['seq_length']:
-                raise ValueError('Forecast sequence length must be < sequence length.')
-            if cfg.get('forecast_overlap'):
-                if cfg['forecast_overlap'] > cfg['forecast_seq_length']:
-                    raise ValueError('Forecast overlap must be <= forecast sequence length.')
+        if cfg.get("forecast_seq_length"):
+            if cfg["forecast_seq_length"] >= cfg["seq_length"]:
+                raise ValueError("Forecast sequence length must be < sequence length.")
+            if cfg.get("forecast_overlap"):
+                if cfg["forecast_overlap"] > cfg["forecast_seq_length"]:
+                    raise ValueError(
+                        "Forecast overlap must be <= forecast sequence length."
+                    )
 
         # Check autoregressive inputs.
-        if 'autoregressive_inputs' in cfg:
-            if len(cfg['autoregressive_inputs']) > 1:
-                raise ValueError('Currently only one autoregressive input is supported.')
-            if cfg['autoregressive_inputs'] and len(cfg['target_variables']) > 1:
-                raise ValueError('Autoregressive models currently only support a single target variable.')
-            if not cfg['autoregressive_inputs'][0].startswith(cfg['target_variables'][0]):
-                raise ValueError('Autoregressive input must be a lagged version of the target variable.')
+        if "autoregressive_inputs" in cfg:
+            if len(cfg["autoregressive_inputs"]) > 1:
+                raise ValueError("Currently only one autoregressive input is supported.")
+            if cfg["autoregressive_inputs"] and len(cfg["target_variables"]) > 1:
+                raise ValueError(
+                    "Autoregressive models currently only support a single target variable."
+                )
+            if cfg["autoregressive_inputs"] and not cfg["autoregressive_inputs"][0].startswith(
+                cfg["target_variables"][0]
+            ):
+                raise ValueError(
+                    "Autoregressive input must be a lagged version of the target variable."
+                )
 
-        # Add more config parsing if necessary
         return cfg
 
     @staticmethod
-    def _read_and_parse_config(yml_path: Path):
-        if yml_path.exists():
-            with yml_path.open('r', encoding="utf-8") as fp:
-                yaml = YAML(typ="safe")
-                cfg = yaml.load(fp)
-        else:
+    def _read_and_parse_config(yml_path: Path) -> dict:
+        """Load YAML file and apply parsing logic."""
+        if not yml_path.exists():
             raise FileNotFoundError(yml_path)
-        cfg = Config._parse_config(cfg)
 
+        with yml_path.open("r", encoding="utf-8") as fp:
+            yaml = YAML(typ="safe")
+            cfg = yaml.load(fp)
+        cfg = Config._parse_config(cfg)
         return cfg
 
+    # ------------------------------------------------------------------ #
+    # Property accessors (unchanged behavior, lightly documented)
+    # ------------------------------------------------------------------ #
     @property
     def additional_feature_files(self) -> List[Path]:
         return self._as_default_list(self._cfg.get("additional_feature_files", None))
@@ -277,7 +295,7 @@ class Config(object):
         return self._get_value_verbose("base_run_dir")
 
     @base_run_dir.setter
-    def base_run_dir(self, folder: Path):
+    def base_run_dir(self, folder: Path) -> None:
         self._cfg["base_run_dir"] = folder
 
     @property
@@ -293,11 +311,11 @@ class Config(object):
         return self._cfg.get("cache_validation_data", True)
 
     @property
-    def checkpoint_path(self) -> Path:
+    def checkpoint_path(self) -> Optional[Path]:
         return self._cfg.get("checkpoint_path", None)
 
     @property
-    def clip_gradient_norm(self) -> float:
+    def clip_gradient_norm(self) -> Optional[float]:
         return self._cfg.get("clip_gradient_norm", None)
 
     @property
@@ -305,7 +323,7 @@ class Config(object):
         return self._as_default_list(self._cfg.get("clip_targets_to_zero", []))
 
     @property
-    def continue_from_epoch(self) -> int:
+    def continue_from_epoch(self) -> Optional[int]:
         return self._cfg.get("continue_from_epoch", None)
 
     @property
@@ -315,15 +333,15 @@ class Config(object):
     @property
     def custom_loss(self) -> dict:
         return self._as_default_dict(self._cfg.get("custom_loss", {}))
-    
+
     @property
-    def target_normalization(self) -> dict:
+    def target_normalization(self) -> Optional[dict]:
         return self._cfg.get("target_normalization", None)
-    
+
     @property
     def save_best_enabled(self) -> bool:
         return self._cfg.get("save_best_enabled", True)
-    
+
     @property
     def save_best_criterion(self) -> str:
         return self._cfg.get("save_best_criterion", "sum_metrics")
@@ -340,12 +358,15 @@ class Config(object):
     @property
     def high_flow_threshold(self) -> float:
         return self._cfg.get("high_flow_threshold", 40.0)
-    # --- ---- 
-    
+
+    # --- ----
+
     @property
     def save_transformed_targets(self) -> dict:
-        return self._as_default_dict(self._cfg.get("save_transformed_targets", False))
-    
+        return self._as_default_dict(
+            self._cfg.get("save_transformed_targets", False)
+        )
+
     @property
     def SH_addRollingFeatures(self) -> bool:
         return self._cfg.get("SH_addRollingFeatures", False)
@@ -359,29 +380,32 @@ class Config(object):
         return self._get_value_verbose("dataset")
 
     @property
-    def device(self) -> str:
+    def device(self) -> Optional[str]:
         return self._cfg.get("device", None)
 
     @device.setter
-    def device(self, device: str):
+    def device(self, device: str) -> None:
         if device == "cpu" or device.startswith("cuda:") or device == "mps":
             self._cfg["device"] = device
         else:
-            raise ValueError("'device' must be either 'cpu', 'mps', or 'cuda:X', with 'X' being the GPU ID.")
+            raise ValueError(
+                "'device' must be either 'cpu', 'mps', or 'cuda:X', with 'X' being the GPU ID."
+            )
 
     @property
     def duplicate_features(self) -> dict:
         duplicate_features = self._cfg.get("duplicate_features", {})
         if duplicate_features is None:
             return {}
-        elif isinstance(duplicate_features, dict):
+        if isinstance(duplicate_features, dict):
             return duplicate_features
-        elif isinstance(duplicate_features, list):
+        if isinstance(duplicate_features, list):
             return {feature: 1 for feature in duplicate_features}
-        elif isinstance(duplicate_features, str):
+        if isinstance(duplicate_features, str):
             return {duplicate_features: 1}
-        else:
-            raise RuntimeError(f"Unsupported type {type(duplicate_features)} for 'duplicate_features' argument.")
+        raise RuntimeError(
+            f"Unsupported type {type(duplicate_features)} for 'duplicate_features' argument."
+        )
 
     @property
     def dynamic_conceptual_inputs(self) -> List[str]:
@@ -392,7 +416,9 @@ class Config(object):
         return self._cfg.get("warmup_period", 0)
 
     @property
-    def dynamic_inputs(self) -> Union[list[str], list[list[str]], dict[str, list[str]]]:
+    def dynamic_inputs(
+        self,
+    ) -> Union[list[str], list[list[str]], dict[str, list[str]]]:
         return self._get_value_verbose("dynamic_inputs")
 
     @property
@@ -402,13 +428,11 @@ class Config(object):
             return list(itertools.chain.from_iterable(dynamic_inputs.values()))
         if dynamic_inputs and isinstance(dynamic_inputs[0], list):
             return list(itertools.chain.from_iterable(dynamic_inputs))
-        else:
-            return dynamic_inputs
+        return dynamic_inputs
 
     @property
-    def dynamics_embedding(self) -> dict:
+    def dynamics_embedding(self) -> Optional[dict]:
         embedding_spec = self._cfg.get("dynamics_embedding", None)
-
         if embedding_spec is None:
             return None
         return self._get_embedding_spec(embedding_spec)
@@ -419,37 +443,36 @@ class Config(object):
 
     @property
     def evolving_attributes(self) -> List[str]:
-        if "evolving_attributes" in self._cfg.keys():
+        if "evolving_attributes" in self._cfg:
             return self._as_default_list(self._cfg["evolving_attributes"])
-        elif "static_inputs" in self._cfg.keys():
-            warnings.warn("'static_inputs' will be deprecated. Use 'evolving_attributes' in the future", FutureWarning)
+        if "static_inputs" in self._cfg:
+            warnings.warn(
+                "'static_inputs' will be deprecated. Use 'evolving_attributes' in the future",
+                FutureWarning,
+            )
             return self._as_default_list(self._cfg["static_inputs"])
-        else:
-            return []
+        return []
 
     @property
     def experiment_name(self) -> str:
-        if self._cfg.get("experiment_name", None) is None:
-            return "run"
-        else:
-            return self._cfg["experiment_name"]
+        return self._cfg.get("experiment_name", "run")
 
     @property
     def finetune_modules(self) -> Union[List[str], Dict[str, str]]:
         finetune_modules = self._cfg.get("finetune_modules", [])
         if finetune_modules is None:
             return []
-        elif isinstance(finetune_modules, str):
+        if isinstance(finetune_modules, str):
             return [finetune_modules]
-        elif isinstance(finetune_modules, dict) or isinstance(finetune_modules, list):
+        if isinstance(finetune_modules, (dict, list)):
             return finetune_modules
-        else:
-            raise ValueError(f"Unknown data type {type(finetune_modules)} for 'finetune_modules' argument.")
+        raise ValueError(
+            f"Unknown data type {type(finetune_modules)} for 'finetune_modules' argument."
+        )
 
     @property
-    def forecast_network(self) -> dict:
+    def forecast_network(self) -> Optional[dict]:
         embedding_spec = self._cfg.get("forecast_network", None)
-
         if embedding_spec is None:
             return None
         return self._get_embedding_spec(embedding_spec)
@@ -467,15 +490,14 @@ class Config(object):
         forecast_inputs = self.forecast_inputs
         if forecast_inputs and isinstance(forecast_inputs[0], list):
             return list(itertools.chain.from_iterable(forecast_inputs))
-        else:
-            return forecast_inputs
+        return forecast_inputs
 
     @property
-    def forecast_overlap(self) -> int:
+    def forecast_overlap(self) -> Optional[int]:
         return self._cfg.get("forecast_overlap", None)
 
     @property
-    def forecast_seq_length(self) -> int:
+    def forecast_seq_length(self) -> Optional[int]:
         return self._cfg.get("forecast_seq_length", None)
 
     @property
@@ -484,12 +506,11 @@ class Config(object):
 
     @property
     def save_git_diff(self) -> bool:
-        return self._cfg.get('save_git_diff', False)
+        return self._cfg.get("save_git_diff", False)
 
     @property
-    def state_handoff_network(self) -> dict:
+    def state_handoff_network(self) -> Optional[dict]:
         embedding_spec = self._cfg.get("state_handoff_network", None)
-
         if embedding_spec is None:
             return None
         return self._get_embedding_spec(embedding_spec)
@@ -497,9 +518,8 @@ class Config(object):
     @property
     def head(self) -> str:
         if self.model == "mclstm":
-            return ''
-        else:
-            return self._get_value_verbose("head")
+            return ""
+        return self._get_value_verbose("head")
 
     @property
     def hindcast_inputs(self) -> list[str] | list[list[str]]:
@@ -509,10 +529,10 @@ class Config(object):
     def hindcast_inputs_flattened(self) -> list[str]:
         hindcast_inputs = self.hindcast_inputs
         if hindcast_inputs and isinstance(hindcast_inputs[0], list):
-            # if self._cfg.get("timestep_counter", False):
-            return list(itertools.chain.from_iterable(hindcast_inputs+[['timestep_counter']]))
-        else:
-            return hindcast_inputs
+            return list(
+                itertools.chain.from_iterable(hindcast_inputs + [["timestep_counter"]])
+            )
+        return hindcast_inputs
 
     @property
     def hidden_size(self) -> Union[int, Dict[str, int]]:
@@ -527,15 +547,15 @@ class Config(object):
         return self._as_default_list(self._cfg.get("hydroatlas_attributes", []))
 
     @property
-    def img_log_dir(self) -> Path:
+    def img_log_dir(self) -> Optional[Path]:
         return self._cfg.get("img_log_dir", None)
 
     @img_log_dir.setter
-    def img_log_dir(self, folder: Path):
+    def img_log_dir(self, folder: Path) -> None:
         self._cfg["img_log_dir"] = folder
 
     @property
-    def initial_forget_bias(self) -> float:
+    def initial_forget_bias(self) -> Optional[float]:
         return self._cfg.get("initial_forget_bias", None)
 
     @property
@@ -543,7 +563,7 @@ class Config(object):
         return self._cfg.get("is_continue_training", False)
 
     @is_continue_training.setter
-    def is_continue_training(self, flag: bool):
+    def is_continue_training(self, flag: bool) -> None:
         self._cfg["is_continue_training"] = flag
 
     @property
@@ -551,7 +571,7 @@ class Config(object):
         return self._cfg.get("is_finetuning", False)
 
     @is_finetuning.setter
-    def is_finetuning(self, flag: bool):
+    def is_finetuning(self, flag: bool) -> None:
         self._cfg["is_finetuning"] = flag
 
     @property
@@ -560,15 +580,21 @@ class Config(object):
 
     @property
     def learning_rate(self) -> Dict[int, float]:
-        if ("learning_rate" in self._cfg.keys()) and (self._cfg["learning_rate"] is not None):
+        """Learning rate schedule.
+
+        Can be specified as:
+        - float  → `{0: value}`
+        - dict   → `{epoch: value, ...}`
+        """
+        if "learning_rate" in self._cfg and self._cfg["learning_rate"] is not None:
             if isinstance(self._cfg["learning_rate"], float):
                 return {0: self._cfg["learning_rate"]}
-            elif isinstance(self._cfg["learning_rate"], dict):
+            if isinstance(self._cfg["learning_rate"], dict):
                 return self._cfg["learning_rate"]
-            else:
-                raise ValueError("Unsupported data type for learning rate. Use either dict (epoch to float) or float.")
-        else:
-            raise ValueError("No learning rate specified in the config (.yml).")
+            raise ValueError(
+                "Unsupported data type for learning rate. Use either dict (epoch→float) or float."
+            )
+        raise ValueError("No learning rate specified in the config (.yml).")
 
     @property
     def log_interval(self) -> int:
@@ -576,10 +602,11 @@ class Config(object):
 
     @property
     def log_n_figures(self) -> int:
-        if (self._cfg.get("log_n_figures", None) is None) or (self._cfg["log_n_figures"] < 1):
+        if (self._cfg.get("log_n_figures", None) is None) or (
+            self._cfg["log_n_figures"] < 1
+        ):
             return 0
-        else:
-            return self._cfg["log_n_figures"]
+        return self._cfg["log_n_figures"]
 
     @property
     def log_tensorboard(self) -> bool:
@@ -590,7 +617,7 @@ class Config(object):
         return self._get_value_verbose("loss")
 
     @loss.setter
-    def loss(self, loss: str):
+    def loss(self, loss: str) -> None:
         self._cfg["loss"] = loss
 
     @property
@@ -622,7 +649,7 @@ class Config(object):
         return self._cfg.get("metrics", [])
 
     @metrics.setter
-    def metrics(self, metrics: Union[str, List[str], Dict[str, List[str]]]):
+    def metrics(self, metrics: Union[str, List[str], Dict[str, List[str]]]) -> None:
         self._cfg["metrics"] = metrics
 
     @property
@@ -646,11 +673,9 @@ class Config(object):
         return self._get_value_verbose("n_taus")
 
     @property
-    def nan_handling_method(self) -> str:
+    def nan_handling_method(self) -> Optional[str]:
         method = self._cfg.get("nan_handling_method", None)
-        if not method:
-            return None
-        return method
+        return method or None
 
     @property
     def nan_sequence_probability(self) -> float:
@@ -665,7 +690,7 @@ class Config(object):
         return self._cfg.get("nan_handling_pos_encoding_size", 0)
 
     @property
-    def negative_sample_handling(self) -> str:
+    def negative_sample_handling(self) -> Optional[str]:
         return self._cfg.get("negative_sample_handling", None)
 
     @property
@@ -685,7 +710,7 @@ class Config(object):
         return self._get_value_verbose("number_of_basins")
 
     @number_of_basins.setter
-    def number_of_basins(self, num_basins: int):
+    def number_of_basins(self, num_basins: int) -> None:
         self._cfg["number_of_basins"] = num_basins
 
     @property
@@ -711,21 +736,21 @@ class Config(object):
     @property
     def output_dropout(self) -> float:
         return self._cfg.get("output_dropout", 0.0)
-    
+
     @property
     def lstm_dropout(self) -> float:
         return self._cfg.get("lstm_dropout", 0.0)
 
     @property
-    def per_basin_test_periods_file(self) -> Path:
+    def per_basin_test_periods_file(self) -> Optional[Path]:
         return self._cfg.get("per_basin_test_periods_file", None)
 
     @property
-    def per_basin_train_periods_file(self) -> Path:
+    def per_basin_train_periods_file(self) -> Optional[Path]:
         return self._cfg.get("per_basin_train_periods_file", None)
 
     @property
-    def per_basin_validation_periods_file(self) -> Path:
+    def per_basin_validation_periods_file(self) -> Optional[Path]:
         return self._cfg.get("per_basin_validation_periods_file", None)
 
     @property
@@ -734,7 +759,9 @@ class Config(object):
 
     @property
     def random_holdout_from_dynamic_features(self) -> Dict[str, float]:
-        return self._as_default_dict(self._cfg.get("random_holdout_from_dynamic_features", {}))
+        return self._as_default_dict(
+            self._cfg.get("random_holdout_from_dynamic_features", {})
+        )
 
     @property
     def rating_curve_file(self) -> Path:
@@ -745,11 +772,11 @@ class Config(object):
         return self._as_default_list(self._cfg.get("regularization", []))
 
     @property
-    def run_dir(self) -> Path:
+    def run_dir(self) -> Optional[Path]:
         return self._cfg.get("run_dir", None)
 
     @run_dir.setter
-    def run_dir(self, folder: Path):
+    def run_dir(self, folder: Path) -> None:
         self._cfg["run_dir"] = folder
 
     @property
@@ -758,7 +785,7 @@ class Config(object):
 
     @property
     def save_all_output(self) -> bool:
-        return self._cfg.get('save_all_output', False)
+        return self._cfg.get("save_all_output", False)
 
     @property
     def save_validation_results(self) -> bool:
@@ -776,10 +803,16 @@ class Config(object):
     def csv_metrics_name(self) -> str:
         return self._cfg.get("csv_metrics_name", "Metrics_over_Experiments")
 
-
     @property
-    def seed(self) -> int:
+    def seed(self) -> Optional[int]:
         return self._cfg.get("seed", None)
+
+    @seed.setter
+    def seed(self, seed: int) -> None:
+        if self._cfg.get("seed", None) is None:
+            self._cfg["seed"] = seed
+        else:
+            raise RuntimeError("Seed was already specified and can't be replaced")
 
     @property
     def transformer_nlayers(self) -> int:
@@ -805,13 +838,6 @@ class Config(object):
     def transformer_nheads(self) -> int:
         return self._get_value_verbose("transformer_nheads")
 
-    @seed.setter
-    def seed(self, seed: int):
-        if self._cfg.get("seed", None) is None:
-            self._cfg["seed"] = seed
-        else:
-            raise RuntimeError("Seed was already specified and can't be replaced")
-
     @property
     def seq_length(self) -> Union[int, Dict[str, int]]:
         return self._get_value_verbose("seq_length")
@@ -822,43 +848,46 @@ class Config(object):
 
     @property
     def static_attributes(self) -> List[str]:
-        if "static_attributes" in self._cfg.keys():
+        if "static_attributes" in self._cfg:
             return self._as_default_list(self._cfg["static_attributes"])
-        elif "camels_attributes" in self._cfg.keys():
-            warnings.warn("'camels_attributes' will be deprecated. Use 'static_attributes' in the future",
-                          FutureWarning)
+        if "camels_attributes" in self._cfg:
+            warnings.warn(
+                "'camels_attributes' will be deprecated. Use 'static_attributes' in the future",
+                FutureWarning,
+            )
             return self._as_default_list(self._cfg["camels_attributes"])
-        else:
-            return []
+        return []
 
     @property
-    def statics_embedding(self) -> dict:
+    def statics_embedding(self) -> Optional[dict]:
         embedding_spec = self._cfg.get("statics_embedding", None)
-
         if embedding_spec is None:
             return None
         return self._get_embedding_spec(embedding_spec)
 
     @property
-    def target_loss_weights(self) -> List[float]:
+    def target_loss_weights(self) -> Optional[List[float]]:
         return self._cfg.get("target_loss_weights", None)
 
     @property
-    def target_noise_std(self) -> float:
-        if (self._cfg.get("target_noise_std", None) is None) or (self._cfg["target_noise_std"] == 0):
+    def target_noise_std(self) -> Optional[float]:
+        if (self._cfg.get("target_noise_std", None) is None) or (
+            self._cfg["target_noise_std"] == 0
+        ):
             return None
-        else:
-            return self._cfg["target_noise_std"]
+        return self._cfg["target_noise_std"]
 
     @property
     def target_variables(self) -> List[str]:
-        if "target_variables" in self._cfg.keys():
+        if "target_variables" in self._cfg:
             return self._cfg["target_variables"]
-        elif "target_variable" in self._cfg.keys():
-            warnings.warn("'target_variable' will be deprecated. Use 'target_variables' in the future", FutureWarning)
+        if "target_variable" in self._cfg:
+            warnings.warn(
+                "'target_variable' will be deprecated. Use 'target_variables' in the future",
+                FutureWarning,
+            )
             return self._cfg["target_variable"]
-        else:
-            raise ValueError("No target variables ('target_variables') defined in the config.")
+        raise ValueError("No target variables ('target_variables') defined in the config.")
 
     @property
     def tau_down(self) -> float:
@@ -889,15 +918,15 @@ class Config(object):
         return self._get_value_verbose("train_basin_file")
 
     @property
-    def train_data_file(self) -> Path:
+    def train_data_file(self) -> Optional[Path]:
         return self._cfg.get("train_data_file", None)
 
     @property
-    def train_dir(self) -> Path:
+    def train_dir(self) -> Optional[Path]:
         return self._cfg.get("train_dir", None)
 
     @train_dir.setter
-    def train_dir(self, folder: Path):
+    def train_dir(self, folder: Path) -> None:
         self._cfg["train_dir"] = folder
 
     @property
@@ -910,7 +939,7 @@ class Config(object):
 
     @property
     def transfer_mtslstm_states(self) -> Dict[str, str]:
-        return self._cfg.get("transfer_mtslstm_states", {'h': 'linear', 'c': 'linear'})
+        return self._cfg.get("transfer_mtslstm_states", {"h": "linear", "c": "linear"})
 
     @property
     def umal_extend_batch(self) -> bool:
@@ -925,21 +954,23 @@ class Config(object):
         return self._as_default_list(self._cfg.get("use_frequencies", []))
 
     @property
-    def validate_every(self) -> int:
-        if (self._cfg.get("validate_every", None) is None) or (self._cfg["validate_every"] < 1):
+    def validate_every(self) -> Optional[int]:
+        if (self._cfg.get("validate_every", None) is None) or (
+            self._cfg["validate_every"] < 1
+        ):
             return None
-        else:
-            return self._cfg["validate_every"]
+        return self._cfg["validate_every"]
 
     @property
     def validate_n_random_basins(self) -> int:
-        if (self._cfg.get("validate_n_random_basins", None) is None) or (self._cfg["validate_n_random_basins"] < 1):
+        if (self._cfg.get("validate_n_random_basins", None) is None) or (
+            self._cfg["validate_n_random_basins"] < 1
+        ):
             return 0
-        else:
-            return self._cfg["validate_n_random_basins"]
+        return self._cfg["validate_n_random_basins"]
 
     @validate_n_random_basins.setter
-    def validate_n_random_basins(self, n_basins: int):
+    def validate_n_random_basins(self, n_basins: int) -> None:
         self._cfg["validate_n_random_basins"] = n_basins
 
     @property
@@ -958,19 +989,18 @@ class Config(object):
     def verbose(self) -> int:
         """Defines level of verbosity.
 
-        0: Only log info messages, don't show progress bars
+        0: Only log info messages, don't show progress bars  
         1: Log info messages and show progress bars
-
-        Returns
-        -------
-        int
-            Level of verbosity.
         """
         return self._cfg.get("verbose", 1)
-    
+
+    # ---- Early stopping & dynamic LR ----
     @property
     def early_stopping(self) -> bool:
-        """Whether to use early stopping. Defaults to False if not set."""
+        """Whether to use early stopping.
+
+        If enabled, `validate_every` must be 1.
+        """
         early_stopping = self._cfg.get("early_stopping", False)
         if early_stopping and self.validate_every != 1:
             raise ValueError(
@@ -980,25 +1010,32 @@ class Config(object):
         return early_stopping
 
     @property
-    def patience_early_stopping(self) -> int:
+    def patience_early_stopping(self) -> Optional[int]:
         """Number of epochs with no improvement before stopping."""
         if self.early_stopping:
             return self._cfg.get("patience_early_stopping", 20)
-        
+        return None
+
     @property
-    def min_delta_early_stopping(self) -> int:
-        """Minimum change in the monitored metric to qualify as an improvement."""
+    def min_delta_early_stopping(self) -> Optional[float]:
+        """Minimum change in metric to count as improvement."""
         if self.early_stopping:
             return self._cfg.get("min_delta_early_stopping", 1e-7)
+        return None
+
     @property
-    def minimum_epochs_before_early_stopping(self) -> int:
-        """Minimum number of epochs before early stopping can be triggered."""
+    def minimum_epochs_before_early_stopping(self) -> Optional[int]:
+        """Minimum epochs before early stopping can be triggered."""
         if self.early_stopping:
             return self._get_value_verbose("minimum_epochs_before_early_stopping")
-    
+        return None
+
     @property
     def dynamic_learning_rate(self) -> bool:
-        """Whether to use  dynamic learning rate. Defaults to False if not set."""
+        """Whether to use dynamic learning rate (ReduceLROnPlateau).
+
+        If enabled, `validate_every` must be 1.
+        """
         dynamic_learning_rate = self._cfg.get("dynamic_learning_rate", False)
         if dynamic_learning_rate and self.validate_every != 1:
             raise ValueError(
@@ -1006,27 +1043,29 @@ class Config(object):
                 "Set validate_every=1 in the config to use early stopping."
             )
         return dynamic_learning_rate
-    
+
     @property
-    def patience_dynamic_learning_rate(self) -> int:
-        """Number of epochs with no improvement before reducing learning rate."""
+    def patience_dynamic_learning_rate(self) -> Optional[int]:
         if self.dynamic_learning_rate:
             return self._get_value_verbose("patience_dynamic_learning_rate")
-        
+        return None
+
     @property
-    def factor_dynamic_learning_rate(self) -> float:
-        """Factor by which to reduce learning rate."""
+    def factor_dynamic_learning_rate(self) -> Optional[float]:
         if self.dynamic_learning_rate:
             return self._get_value_verbose("factor_dynamic_learning_rate")
-    
+        return None
+
     @property
     def num_layers(self) -> int:
         """Number of layers in LSTM-based models."""
         return self._cfg.get("num_layers", 1)
-        
 
+    # ------------------------------------------------------------------ #
+    # Embedding spec helper
+    # ------------------------------------------------------------------ #
     def _get_embedding_spec(self, embedding_spec: dict) -> dict:
-        if isinstance(embedding_spec, bool) and embedding_spec:  #
+        if isinstance(embedding_spec, bool) and embedding_spec:
             msg = [
                 "The semantics of 'dynamics/statics_embedding' have changed, and the associated arguments "
                 "'embedding_hiddens/activation/dropout' are deprecated. The old specifications may no longer work in "
@@ -1034,25 +1073,57 @@ class Config(object):
             ]
             warnings.warn(" ".join(msg), FutureWarning)
             return {
-                'type': 'fc',
-                'hiddens': self._as_default_list(self._cfg.get("embedding_hiddens", [])),
-                'activation': self._cfg.get("embedding_activation", "tanh"),
-                'dropout': self._cfg.get("embedding_dropout", 0.0)
+                "type": "fc",
+                "hiddens": self._as_default_list(
+                    self._cfg.get("embedding_hiddens", [])
+                ),
+                "activation": self._cfg.get("embedding_activation", "tanh"),
+                "dropout": self._cfg.get("embedding_dropout", 0.0),
             }
 
         return {
-            'type': embedding_spec.get('type', 'fc'),
-            'hiddens': self._as_default_list(embedding_spec.get('hiddens', [])),
-            'activation': embedding_spec.get('activation', 'tanh'),
-            'dropout': embedding_spec.get('dropout', 0.0)
+            "type": embedding_spec.get("type", "fc"),
+            "hiddens": self._as_default_list(embedding_spec.get("hiddens", [])),
+            "activation": embedding_spec.get("activation", "tanh"),
+            "dropout": embedding_spec.get("dropout", 0.0),
         }
 
 
-def create_random_name():
-    adjectives = ('white', 'black', 'green', 'golden', 'modern', 'lazy', 'great', 'meandering', 'nervous', 'demanding',
-                  'relaxed', 'dashing', 'clever', 'brave', 'charming')
-    nouns = ('mississippi', 'amazon', 'nile', 'yangtze', 'yellow', 'congo', 'mekong', 'otter', 'frog', 'trout',
-             'beaver', 'eel', 'catfish', 'salmon')
+def create_random_name() -> str:
+    """Create a random experiment name (adjective-noun)."""
+    adjectives = (
+        "white",
+        "black",
+        "green",
+        "golden",
+        "modern",
+        "lazy",
+        "great",
+        "meandering",
+        "nervous",
+        "demanding",
+        "relaxed",
+        "dashing",
+        "clever",
+        "brave",
+        "charming",
+    )
+    nouns = (
+        "mississippi",
+        "amazon",
+        "nile",
+        "yangtze",
+        "yellow",
+        "congo",
+        "mekong",
+        "otter",
+        "frog",
+        "trout",
+        "beaver",
+        "eel",
+        "catfish",
+        "salmon",
+    )
 
     rng = random.Random(datetime.now().timestamp())  # use system time as random seed
-    return rng.choice(adjectives) + '-' + rng.choice(nouns)
+    return rng.choice(adjectives) + "-" + rng.choice(nouns)

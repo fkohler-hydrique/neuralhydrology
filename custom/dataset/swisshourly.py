@@ -1,11 +1,9 @@
-# Import
 import logging
-import numpy as np
-import pandas as pd
-import xarray as xr
-
 from pathlib import Path
 from typing import Dict, List, Union
+
+import pandas as pd
+import xarray as xr
 
 from neuralhydrology.datasetzoo.basedataset import BaseDataset
 from neuralhydrology.utils.config import Config
@@ -15,27 +13,39 @@ LOGGER = logging.getLogger(__name__)
 
 class SwissHourly(BaseDataset):
     """Custom dataset for Swiss hourly streamflow and meteorological data.
-    Expects:
 
-    - Reads basin CSVs: expects a datetime-like column and feature columns.
-    - Ensures a DatetimeIndex (hourly if possible), no MultiIndex.
-    - Computes rolling features:
-        prec_*_3h, prec_*_24h, temp_binn_6h_mean, degree_day_24h, is_snow_bruchji
-    - Raises if required dynamic_inputs (non-rolling) are missing.
-    - Does NOT create autoregressive shifted columns (BaseDataset does that).
-    - Attribute TXT files under `<data_dir>/swiss_attributes_v1.0/`
-      with ';'-separated values, containing 'gauge_id' as the index.
+    Responsibilities
+    ----------------
+    - Load basin CSVs (one per basin) and ensure:
+      * A proper DatetimeIndex (ideally hourly), no MultiIndex.
+      * No duplicate timestamps.
+    - Optionally compute rolling features:
+        * prec_*_3h, prec_*_24h
+        * temp_binn_6h_mean
+        * degree_day_24h
+        * is_snow_bruchji
+    - Validate that required dynamic inputs (non-rolling ones) are present.
+    - Load static attributes from TXT files under:
+        <data_dir>/swiss_attributes_v1.0/
+      Files are ';'-separated and must contain a 'gauge_id' column.
+
+    Note
+    ----
+    - This dataset does NOT create autoregressive shifted columns; this is
+      handled by BaseDataset.
     """
+
     def __init__(
         self,
         cfg: Config,
         is_train: bool,
         period: str,
-        basin: str = None,
-        additional_features: List[Dict[str, pd.DataFrame]] = None,
-        id_to_int: Dict[str, int] = None,
-        scaler: Dict[str, Union[pd.Series, xr.DataArray]] = None,
-    ):
+        basin: str | None = None,
+        additional_features: List[Dict[str, pd.DataFrame]] | None = None,
+        id_to_int: Dict[str, int] | None = None,
+        scaler: Dict[str, Union[pd.Series, xr.DataArray]] | None = None,
+    ) -> None:
+        """Initialize the SwissHourly dataset."""
         super().__init__(
             cfg=cfg,
             is_train=is_train,
@@ -46,36 +56,80 @@ class SwissHourly(BaseDataset):
             scaler=scaler or {},
         )
 
+    # -------------------------------------------------------------------------
+    # Helper methods for time handling
+    # -------------------------------------------------------------------------
     def _find_datetime_col(self, df: pd.DataFrame) -> str:
-        # prefer common names
+        """Infer which column in `df` should be used as the datetime column.
+
+        Strategy:
+        - Prefer a column literally named "date".
+        - Otherwise, pick the first column whose name contains one of:
+          "date", "time", "datetime", "timestamp" (case-insensitive).
+        - As a fallback, attempt to parse each column as datetime and select
+          the one where >95% of values parse successfully.
+
+        Raises
+        ------
+        ValueError
+            If no suitable datetime-like column can be identified.
+        """
+        # Prefer a column literally named "date"
         if "date" in df.columns:
             return "date"
-        candidates = [c for c in df.columns if any(k in c.lower() for k in ("date", "time", "datetime", "timestamp"))]
+
+        # Next, try by column name heuristics
+        candidates = [
+            c
+            for c in df.columns
+            if any(key in c.lower() for key in ("date", "time", "datetime", "timestamp"))
+        ]
         if candidates:
             return candidates[0]
-        # fallback: test each column parseability
-        for c in df.columns:
+
+        # Fallback: test parseability for each column
+        for col in df.columns:
             try:
-                parsed = pd.to_datetime(df[c], errors="coerce")
+                parsed = pd.to_datetime(df[col], errors="coerce")
             except Exception:
                 continue
             if parsed.notna().mean() > 0.95:
-                return c
+                return col
+
         raise ValueError("No datetime-like column detected in CSV.")
 
     def _ensure_datetime_index(self, df: pd.DataFrame) -> pd.DataFrame:
-        # flatten MultiIndex if present
+        """Return a copy of `df` with a DatetimeIndex.
+
+        - Flattens a MultiIndex (if present) by resetting it.
+        - Detects the datetime column using `_find_datetime_col`.
+        - Parses timestamps and drops rows with invalid timestamps.
+        - Sorts by time and sets the time column as index.
+        """
+        df = df.copy()
+
+        # Flatten any MultiIndex on the rows
         if isinstance(df.index, pd.MultiIndex):
             df = df.reset_index()
+
         time_col = self._find_datetime_col(df)
         df[time_col] = pd.to_datetime(df[time_col], errors="coerce")
+
         if df[time_col].isna().any():
-            LOGGER.warning(f"Some timestamps failed to parse in column '{time_col}'. Dropping NaT rows.")
-            df = df[~df[time_col].isna()]
+            LOGGER.warning(
+                "Some timestamps failed to parse in column '%s'. Dropping NaT rows.",
+                time_col,
+            )
+            df = df[df[time_col].notna()]
+
         df = df.sort_values(time_col)
         df = df.set_index(time_col)
+
         return df
 
+    # -------------------------------------------------------------------------
+    # Loading time series
+    # -------------------------------------------------------------------------
     def _load_basin_data(self, basin: str) -> pd.DataFrame:
         """Load hourly time series data for the given basin.
 
@@ -87,89 +141,123 @@ class SwissHourly(BaseDataset):
         Returns
         -------
         pd.DataFrame
-            Time-indexed DataFrame with feature columns.
+            Time-indexed DataFrame with feature columns and hourly frequency.
         """
         csv_path = Path(self.cfg.data_dir) / f"{basin}.csv"
         if not csv_path.exists():
-            raise FileNotFoundError(f"Time series file not found for basin '{basin}' at {csv_path}")
+            raise FileNotFoundError(
+                f"Time series file not found for basin '{basin}' at {csv_path}"
+            )
 
-        df = pd.read_csv(csv_path, parse_dates=["date"])
-        if "date" not in df.columns:
-            raise ValueError(f"CSV file {csv_path} must contain a 'date' column.")
-
+        # Let _ensure_datetime_index handle datetime parsing and index
+        df = pd.read_csv(csv_path)
         df = self._ensure_datetime_index(df)
-        # try to set hourly frequency
+
+        # Try to enforce an hourly frequency whenever possible
         try:
             df = df.asfreq("h")
         except Exception:
+            # Fall back to inferred frequency if available
             try:
                 inferred = pd.infer_freq(df.index)
                 if inferred is not None:
                     df = df.asfreq(inferred)
             except Exception:
-                LOGGER.warning(f"Could not enforce frequency for basin {basin}, proceeding.")
-        # drop duplicate timestamps
-        if df.index.duplicated().any():
-            raise ValueError(f"{basin}: duplicate timestamps found for basin {basin} — keeping first occurrence.")
-        
-        # print(self.cfg.SH_addRollingFeatures)
-        if self.cfg.SH_addRollingFeatures:
-            # compute rolling features
-            df = add_rolling_features(df)
-        # print("After rolling features added, columns are: ", df.columns)
+                LOGGER.warning(
+                    "Could not enforce a regular frequency for basin %s. Proceeding with "
+                    "original index.",
+                    basin,
+                )
 
-        # Build list of required dynamic inputs (non-rolling ones)
-        # dynamic_inputs in config is a list of basic features (not necessarily rolling ones)
-        required_dyn = []
+        # Drop duplicate timestamps, keeping the first occurrence
+        if df.index.duplicated().any():
+            LOGGER.warning(
+                "%s: duplicate timestamps found. Dropping all but the first occurrence.",
+                basin,
+            )
+            df = df[~df.index.duplicated(keep="first")]
+
+        # Optionally add rolling features
+        if getattr(self.cfg, "SH_addRollingFeatures", False):
+            df = add_rolling_features(df)
+
+        # ---------------------------------------------------------------------
+        # Determine which dynamic inputs we logically require
+        # ---------------------------------------------------------------------
+        # dynamic_inputs in config can be:
+        # - a flat list, or
+        # - a dictionary of lists.
         if isinstance(self.cfg.dynamic_inputs, list):
             required_dyn = list(self.cfg.dynamic_inputs)
         else:
-            required_dyn = [i for inputs in self.cfg.dynamic_inputs.values() for i in inputs]
+            required_dyn = [
+                item
+                for inputs in self.cfg.dynamic_inputs.values()
+                for item in inputs
+            ]
 
-        # Identify rolling-derived names we add; we won't require them to be present in CSV
-        rolling_derived = []
-        for base in ["prec_bruchji", "prec_fieschertal", "prec_binn", "prec_visp"]:
-            rolling_derived += [f"{base}_3h", f"{base}_24h"]
+        # Names of rolling-derived features that we create in add_rolling_features()
+        rolling_derived = [
+            f"{base}_{window}"
+            for base in ("prec_bruchji", "prec_fieschertal", "prec_binn", "prec_visp")
+            for window in ("3h", "24h")
+        ]
         rolling_derived += ["temp_binn_6h_mean", "degree_day_24h", "is_snow_bruchji"]
 
-        # If any required dynamic input (from config) is missing in df and is NOT a rolling-derived feature -> raise
-        missing = [c for c in required_dyn if c not in df.columns and c not in rolling_derived]
+        # Missing dynamic inputs (excluding rolling-derived ones) should raise
+        missing = [
+            col
+            for col in required_dyn
+            if col not in df.columns and col not in rolling_derived
+        ]
         if missing:
             raise KeyError(f"Missing required dynamic input(s) for basin {basin}: {missing}")
-        # print("No missing")  
-        # Now compute the keep_cols as BaseDataset will expect (mirrors BaseDataset logic)
+
+        # ---------------------------------------------------------------------
+        # Collect all columns we want to keep
+        # ---------------------------------------------------------------------
         if isinstance(self.cfg.dynamic_inputs, list):
-            # print("ouais alors Jacqueline...")
-            dynamic_cols_to_keep = getattr(self.cfg, "dynamic_inputs_flattened", self.cfg.dynamic_inputs)
+            dynamic_cols_to_keep = getattr(
+                self.cfg, "dynamic_inputs_flattened", self.cfg.dynamic_inputs
+            )
         else:
-            dynamic_cols_to_keep = [i for inputs in self.cfg.dynamic_inputs.values() for i in inputs]
-        # print(dynamic_cols_to_keep)    
-        # print("target variables: ", self.cfg.target_variables)
+            dynamic_cols_to_keep = [
+                item
+                for inputs in self.cfg.dynamic_inputs.values()
+                for item in inputs
+            ]
+
         keep_cols = (
             list(self.cfg.target_variables)
             + list(getattr(self.cfg, "evolving_attributes", []))
             + list(getattr(self.cfg, "mass_inputs", []))
-            # + list(getattr(self.cfg, "autoregressive_inputs", []))
+            # autoregressive inputs are handled by BaseDataset
             + list(dynamic_cols_to_keep)
             + list(getattr(self.cfg, "dynamic_conceptual_inputs", []))
         )
-        keep_cols = list(sorted(set(keep_cols)))
-        # print("columns: ", keep_cols)
-        
-        # Restrict to keep_cols in stable order
-        df = df[keep_cols]
-        # print("After restricting to keep_cols, columns are: ", df.columns)
-                
+        # Ensure uniqueness and stable ordering
+        keep_cols = sorted(set(keep_cols))
 
-        # Final guard: ensure DatetimeIndex
-        if not isinstance(df.index, (pd.DatetimeIndex, pd.TimedeltaIndex, pd.PeriodIndex)):
+        # Restrict DataFrame to columns used by the model
+        df = df[keep_cols]
+
+        # Final guard: ensure index really is time-like
+        if not isinstance(
+            df.index, (pd.DatetimeIndex, pd.TimedeltaIndex, pd.PeriodIndex)
+        ):
             try:
                 df.index = pd.to_datetime(df.index)
-            except Exception:
-                raise ValueError(f"Final DataFrame for basin {basin} does not have a datetime index")
-        # LOGGER.info(f"\n [SwissHourly] {basin} final columns: {list(df.columns)}")
+            except Exception as exc:
+                raise ValueError(
+                    f"Final DataFrame for basin {basin} does not have a datetime index"
+                ) from exc
+
+        # LOGGER.debug("[SwissHourly] %s final columns: %s", basin, list(df.columns))
         return df
 
+    # -------------------------------------------------------------------------
+    # Loading static attributes
+    # -------------------------------------------------------------------------
     def _load_attributes(self) -> pd.DataFrame:
         """Load basin attributes from Swiss attribute files.
 
@@ -186,38 +274,78 @@ class SwissHourly(BaseDataset):
         if not txt_files:
             raise RuntimeError(f"No attribute files found in {attr_dir}")
 
-        dfs = []
+        dfs: list[pd.DataFrame] = []
         for txt_file in txt_files:
-            df_temp = pd.read_csv(txt_file, sep=";", header=0, dtype={"gauge_id": str})
+            df_temp = pd.read_csv(
+                txt_file,
+                sep=";",
+                header=0,
+                dtype={"gauge_id": str},
+            )
             if "gauge_id" not in df_temp.columns:
-                raise ValueError(f"Attribute file {txt_file} must contain a 'gauge_id' column.")
+                raise ValueError(
+                    f"Attribute file {txt_file} must contain a 'gauge_id' column."
+                )
+
             df_temp = df_temp.set_index("gauge_id")
             dfs.append(df_temp)
 
-        # Merge on index to avoid duplicate columns instead of blind concat
-        df = pd.concat(dfs, axis=1)
+        # Merge on index; this aligns basins and stacks attributes by columns
+        attr_df = pd.concat(dfs, axis=1)
 
-        # Filter to basins in use
+        # Filter to basins in use (if `self.basins` is defined)
         if self.basins:
-            missing = [b for b in self.basins if b not in df.index]
+            missing = [b for b in self.basins if b not in attr_df.index]
             if missing:
                 raise ValueError(f"Missing attributes for basins: {missing}")
-            df = df.loc[self.basins]
+            attr_df = attr_df.loc[self.basins]
 
-        # Optional: clean column names (strip whitespace)
-        df.columns = df.columns.str.strip()
+        # Clean column names (e.g. trailing spaces)
+        attr_df.columns = attr_df.columns.str.strip()
 
-# Function specific to Swisshourly dataset (not modularized yet!)
+        return attr_df
+
+
+# -------------------------------------------------------------------------
+# Rolling feature computation (SwissHourly specific utility)
+# -------------------------------------------------------------------------
 def add_rolling_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Add rolling/aggregated features specific to the SwissHourly dataset.
+
+    Features added (if base columns exist):
+    - For each precipitation column in:
+        prec_bruchji, prec_fieschertal, prec_binn, prec_visp
+      * <prec>_3h  : 3-hour rolling sum
+      * <prec>_24h : 24-hour rolling sum
+
+    - For `temp_binn` (if present):
+      * temp_binn_6h_mean : 6-hour rolling mean
+      * degree_day_24h    : 24-hour rolling sum of positive temperatures
+      * is_snow_bruchji   : indicator (1 if temp <= 0, else 0)
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input DataFrame with a time index.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with additional rolling/aggregated columns.
+    """
     df = df.copy()
-    # precipitation aggregates
-    for prec_col in ["prec_bruchji", "prec_fieschertal", "prec_binn", "prec_visp"]:
+
+    # Precipitation aggregates
+    for prec_col in ("prec_bruchji", "prec_fieschertal", "prec_binn", "prec_visp"):
         if prec_col in df.columns:
             df[f"{prec_col}_3h"] = df[prec_col].rolling(window=3, min_periods=1).sum()
             df[f"{prec_col}_24h"] = df[prec_col].rolling(window=24, min_periods=1).sum()
-    # temperature derived
+
+    # Temperature-derived features
     if "temp_binn" in df.columns:
-        df["temp_binn_6h_mean"] = df["temp_binn"].rolling(window=6, min_periods=1).mean()
-        df["degree_day_24h"] = df["temp_binn"].clip(lower=0).rolling(window=24, min_periods=1).sum()
-        df["is_snow_bruchji"] = (df["temp_binn"] <= 0).astype(int)
+        temp = df["temp_binn"]
+        df["temp_binn_6h_mean"] = temp.rolling(window=6, min_periods=1).mean()
+        df["degree_day_24h"] = temp.clip(lower=0).rolling(window=24, min_periods=1).sum()
+        df["is_snow_bruchji"] = (temp <= 0).astype("int8")
+
     return df

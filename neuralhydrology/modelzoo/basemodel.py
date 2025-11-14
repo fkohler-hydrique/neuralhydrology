@@ -11,88 +11,121 @@ from neuralhydrology.utils.samplingutils import sample_pointpredictions, umal_ex
 class BaseModel(nn.Module):
     """Abstract base model class, don't use this class for model training.
 
-    Use subclasses of this class for training/evaluating different models, e.g. use `CudaLSTM` for training a standard
-    LSTM model or `EA-LSTM` for training an Entity-Aware-LSTM. Refer to  :doc:`Documentation/Modelzoo </usage/models>` 
-    for a full list of available models and how to integrate a new model. 
+    Use subclasses of this class for training/evaluating different models, e.g. use `CudaLSTM` for a standard LSTM
+    model or `EA-LSTM` for an Entity-Aware-LSTM.
 
     Parameters
     ----------
     cfg : Config
         The run configuration.
     """
+
     # specify submodules of the model that can later be used for finetuning. Names must match class attributes
-    module_parts = []
+    module_parts: list[str] = []
 
-    def __init__(self, cfg: Config):
-        super(BaseModel, self).__init__()
+    def __init__(self, cfg: Config) -> None:
+        super().__init__()
         self.cfg = cfg
-        # print("Output size of the head", len(cfg.target_variables))
-        self.output_size = len(cfg.target_variables)
-        if cfg.head.lower() == 'gmm':
-            self.output_size *= 3 * cfg.n_distributions
-        elif cfg.head.lower() == 'cmal':
-            self.output_size *= 4 * cfg.n_distributions
-        elif cfg.head.lower() == 'umal':
-            self.output_size *= 2
 
-    def sample(self, data: Dict[str, torch.Tensor], n_samples: int) -> Dict[str, torch.Tensor]:
-        """Provides point prediction samples from a probabilistic model.
-        
-        This function wraps the `sample_pointpredictions` function, which provides different point sampling functions
-        for the different uncertainty estimation approaches. There are also options to handle negative point prediction 
-        samples that arise while sampling from the uncertainty estimates. They can be controlled via the configuration. 
-         
+        # Cache for scaler to avoid reloading from disk on every sampling call
+        self._scaler_cache: Dict | None = None
+
+        # Output size of the regression/probabilistic head
+        self.output_size = len(cfg.target_variables)
+
+        head = cfg.head.lower()
+        if head == "gmm":
+            # GMM: mu, sigma, pi → 3 × n_distributions
+            self.output_size *= 3 * cfg.n_distributions
+        elif head == "cmal":
+            # CMAL: mu, b, tau, pi → 4 × n_distributions
+            self.output_size *= 4 * cfg.n_distributions
+        elif head == "umal":
+            # UMAL: mu, b → 2 × targets
+            self.output_size *= 2
+        # regression and any other deterministic heads keep output_size as number of targets
+
+    def _get_scaler(self) -> Dict:
+        """Lazy-load and cache scaler from disk for sampling."""
+        if self._scaler_cache is None:
+            self._scaler_cache = load_scaler(self.cfg.run_dir)
+        return self._scaler_cache
+
+    def sample(
+        self,
+        data: dict[str, torch.Tensor | dict[str, torch.Tensor]],
+        n_samples: int,
+    ) -> Dict[str, torch.Tensor]:
+        """Sample point predictions from a probabilistic model.
+
+        Wraps :func:`sample_pointpredictions`, which implements the sampling logic for different
+        uncertainty estimation approaches (GMM, CMAL, UMAL, ...).
 
         Parameters
         ----------
-        data : Dict[str, torch.Tensor]
-            Dictionary, containing input features as key-value pairs.
+        data : dict
+            Dictionary containing model inputs (and optionally labels).
         n_samples : int
-            Number of point predictions that ought ot be sampled form the model. 
+            Number of point prediction samples to draw from the model.
 
         Returns
         -------
-        Dict[str, torch.Tensor]
-            Sampled point predictions 
+        dict
+            Sampled point predictions (e.g. containing ``'y_hat'`` or similar keys).
         """
-        scaler = load_scaler(self.cfg.run_dir)
+        scaler = self._get_scaler()
         return sample_pointpredictions(self, data, n_samples, scaler)
 
-    def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
+    def forward(
+        self,
+        data: dict[str, torch.Tensor | dict[str, torch.Tensor]],
+    ) -> Dict[str, torch.Tensor]:
         """Perform a forward pass.
+
+        This method must be implemented by subclasses.
 
         Parameters
         ----------
-        data : dict[str, torch.Tensor | dict[str, torch.Tensor]]
-            Dictionary, containing input features as key-value pairs.
+        data : dict
+            Dictionary containing input features (and potentially labels).
 
         Returns
         -------
-        Dict[str, torch.Tensor]
-            Model output and potentially any intermediate states and activations as a dictionary.
+        dict
+            Model outputs and intermediate states/activations.
         """
         raise NotImplementedError
 
-    def pre_model_hook(self, data: Dict[str, torch.Tensor], is_train: bool) -> Dict[str, torch.Tensor]:
-        """A function to execute before the model in training, validation and test. 
-        The beahvior can be adapted depending on the run configuration and the provided arguments.
+    def pre_model_hook(
+        self,
+        data: dict[str, torch.Tensor | dict[str, torch.Tensor]],
+        is_train: bool,
+    ) -> dict[str, torch.Tensor | dict[str, torch.Tensor]]:
+        """Optional hook executed before the forward pass in train/validation/test.
+
+        For UMAL heads, this extends the batch by tau-samples along an extra dimension.
 
         Parameters
         ----------
-        data : Dict[str, torch.Tensor]
-            Dictionary, containing input features as key-value pairs and labels y.
+        data : dict
+            Input dictionary containing features (and labels).
         is_train : bool
-            Defines if the hook is executed in train mode or in validation/test mode.
+            Whether we are in training mode.
 
         Returns
         -------
-        data : Dict[str, torch.Tensor]
-            The modified (or unmodified) data that are used for the training or evaluation.
+        dict
+            Possibly modified input data used for the forward pass.
         """
         if self.cfg.head.lower() == "umal":
-            data = umal_extend_batch(data, self.cfg, n_taus=self.cfg.n_taus, extend_y=True)
+            data = umal_extend_batch(
+                data,
+                self.cfg,
+                n_taus=self.cfg.n_taus,
+                extend_y=True,
+            )
         else:
-            # here one can implement additional pre model hooks
+            # hook for additional pre-processing strategies, if needed in the future
             pass
 
         return data
