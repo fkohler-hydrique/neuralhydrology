@@ -1,0 +1,247 @@
+# ------------------------------------------------
+# 1. Experiment setup
+# ------------------------------------------------
+
+# ==============================================================================
+# Project & Paths
+# ==============================================================================
+
+experiment_name: "Name1"  # Name used for run folders/logs
+base_run_dir: ./runs      # Base directory for experiment runs
+
+img_log_dir: null         # Directory for saving image logs
+train_dir: null           # Directory for saving training artifacts
+
+seed: 42                  # Random seed (int)
+device: "cuda:0"          # "cpu", "mps", or "cuda:X"
+num_workers: 16           # Data loader workers
+
+# ==============================================================================
+# Data & IO
+# ==============================================================================
+
+data_dir: "../../data"    # Path to dataset
+dataset:  "swisshourly"   # Dataset name # for example "swisshourly"
+
+train_basin_file:      "../../data/RS_v1.txt" # File listing training basins
+validation_basin_file: "../../data/RS_v1.txt" # File listing validation basins
+test_basin_file:       "../../data/RS_v1.txt" # File listing test basins
+
+train_start_date:       03/05/2020   
+train_end_date:         30/03/2023   
+validation_start_date:  01/04/2023
+validation_end_date:    04/02/2024
+test_start_date:        01/04/2023
+test_end_date:          04/02/2024   
+
+dynamic_inputs:  
+- streamflow_hindcast
+- null_values
+- Massa|22_Q simule
+- Massa|69_i
+- Massa|69_T
+- Massa|70_h
+- Massa|71_h
+# - Massa|71_A
+# - Massa|73_H
+# - Massa|73_A
+- HourOfDaySinus
+- DayOfYearSinus
+- fc_Massa|22_Q simule
+- fc_Massa|69_i
+- fc_Massa|69_T
+- fc_Massa|70_h
+- fc_Massa|71_h
+# - fc_Massa|71_A
+# - fc_Massa|73_H
+# - fc_Massa|73_A
+- temp_m1	
+- fc_temp_m1	
+- is_m1_snow		
+- fc_is_m1_snow		
+- temp_m1_12h	
+- fc_temp_m1_12h	
+
+hindcast_inputs:
+- streamflow_hindcast
+- Massa|22_Q simule
+- Massa|69_i
+- Massa|69_T
+- Massa|70_h
+- Massa|71_h
+# - Massa|71_A
+# - Massa|73_H
+# - Massa|73_A
+- HourOfDaySinus
+- DayOfYearSinus
+- temp_m1	
+- is_m1_snow		
+- temp_m1_12h	
+
+forecast_inputs:
+- null_values
+- fc_Massa|22_Q simule
+- fc_Massa|69_i
+- fc_Massa|69_T
+- fc_Massa|70_h
+- fc_Massa|71_h
+# - fc_Massa|71_A
+# - fc_Massa|73_H
+# - fc_Massa|73_A
+- HourOfDaySinus
+- DayOfYearSinus
+- fc_temp_m1	
+- fc_is_m1_snow		
+- fc_temp_m1_12h	
+
+timestep_counter: true    # adds a feature that counts the time step in the sequence
+
+# --- TARGET FEATURES: ---
+target_variables:  # streamflow name is "forced", code not modularized enough
+  - streamflow
+clip_targets_to_zero:
+  - streamflow
+
+# Only keep sequences whose last target 'streamflow' > 40
+high_flow_only: true
+high_flow_target: streamflow   # must be in cfg.target_variables
+high_flow_threshold: 10.0
+
+# custom_normalization:
+#   streamflow: 
+#     scaling: "minmax"
+#   streamflow_hindcast: 
+#     scaling: "minmax"
+
+# target_normalization: 
+#   streamflow:
+#     transform: "log"         # 'log' | 'none'
+#     log_offset: 0.01         # offset for log
+#     center: "mean"           # 'mean'|'median'|'none'
+#     scale: "minmax"             # 'std'|'minmax'|'none'
+#   streamflow_hindcast:
+#     transform: "log"         # 'log' | 'none'
+#     log_offset: 0.01         # offset for log
+#     center: "mean"           # 'mean'|'median'|'none'
+#     scale: "std"             # 'std'|'minmax'|'none'
+# save_transformed_targets: false
+# ---------------
+
+# ==============================================================================
+# Model
+# ==============================================================================
+
+model: "sequential_forecast_lstm"  # Model type (e.g. "lstm", "transformer", "arlstm")
+head: "regression" 
+
+hidden_size:          128+       # Model hidden size (int or dict)
+# hindcast_hidden_size: 256
+# forecast_hidden_size: 256
+
+output_activation: "linear"
+output_dropout: 0.4
+
+# LSTM
+lstm_dropout: 0.0           # Dropout probability (0–1).
+num_layers: 1               # Number of LSTM layers (int)
+initial_forget_bias: 1    # Initial bias value of the forget gate (0-3, high helps the model remember the past)
+
+# Handoff Sequential LSTM
+# state_handoff_network:
+#   hiddens: [128]
+#   activation: gelu
+#   dropout: 0.00
+
+# Add embedding for dynamical features
+# dynamics_embedding:
+#   type:
+#     fc
+#   hiddens:
+#     [16]
+#   activation:
+#     tanh
+#   dropout:
+#     0.0
+
+# ==============================================================================
+# Training
+# ==============================================================================
+
+epochs: 10000
+learning_rate: 1e-3
+
+batch_size: 32  # Mini-batch size (int).
+
+optimizer: "AdamW"        # Specify optimizer [Adam. AdamW]
+loss: custom_loss         # Specify loss [MSE, NSE, RMSE, ...]
+
+seq_length: 96             # Input sequence length, in frequency of measure
+predict_last_n: 24         # Prediction horizon
+
+forecast_seq_length: 24    # Must be < seq_length, length of sequence that uses the forecast features
+forecast_overlap: null     # Must be <= forecast_seq_length
+
+custom_loss:              # Custom loss function
+  losses:
+  - smape
+  - nse
+  - mse
+  weights:
+  - 0.6
+  - 0.2
+  - 0.2
+
+clip_gradient_norm: 2.0   # Avoids exploding gradients
+
+metrics:
+- MAPE
+- NSE
+- MSE
+- RMSE
+
+# Early stopping / Dynamic learning rate
+validate_every:           1        # specify after how many epochs to perform validation 
+validate_n_random_basins: 1
+
+# NEED validate_every set to 1
+early_stopping: true
+patience_early_stopping:              10
+minimum_epochs_before_early_stopping: 15
+min_delta_early_stopping:             1e-7
+
+# Dynamic LR
+dynamic_learning_rate: true
+patience_dynamic_learning_rate:       5     #6
+factor_dynamic_learning_rate:         0.4   # Learning rate (float).
+
+# ==============================================================================
+# Output & Loggin
+# ==============================================================================
+
+log_interval: 10
+log_n_figures: 1
+log_tensorboard: true
+
+save_train_data: false
+save_validation_results: false
+save_all_output: false
+save_weights_every: 10
+
+verbose: 1                      # 0 = logs only, 1 = logs + progress
+
+save_best_enabled: true
+save_best_criterion: sum_metrics # or val_loss
+
+save_in_csv: true
+# add the .csv automatically, just have to provide the name of the file
+csv_metrics_name: Metrics_over_Experiments
+
+# ------------------------------------------------
+# Others
+# ------------------------------------------------
+
+# Handling missing data
+nan_handling_method: masked_mean       # e.g. "mask", "zero"
+nan_step_probability: 0.0
+nan_sequence_probability: 0.0
+nan_handling_pos_encoding_size: 0

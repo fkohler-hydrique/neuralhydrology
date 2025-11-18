@@ -1,0 +1,1 @@
+This experiment includes the use of data coming from actual forecasts during the prediction creation. It avoids learning on perfect prediction and thus adding a bias on a score.

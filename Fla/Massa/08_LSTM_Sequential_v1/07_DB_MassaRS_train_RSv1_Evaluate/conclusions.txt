@@ -1,0 +1,4 @@
+After some tests feeding the model trained with perfect forecasts real forecasted data, it has been constated that the transition is not natural for our model. The score obtained on the period 2023-2024 was of MAPE_24h=21
+
+With this unsatisfying result, it seems that training a model with real forecasts, although at the cost of a reduced training window, bears better results and scores than training a long time on idealistic data.
+

@@ -847,12 +847,6 @@ class BaseDataset(Dataset):
 
             # =================================================================
             # HIGH-FLOW FILTER (optional, controlled by cfg.high_flow_only)
-            # -----------------------------------------------------------------
-            # If cfg.high_flow_only is True, we keep only those sequences whose
-            # *final* target value (at the lowest frequency) is >= high_flow_threshold.
-            #
-            # If you want this only for TRAINING, change the condition to:
-            #   if self.is_train and getattr(self.cfg, "high_flow_only", False) ...
             # =================================================================
             if getattr(self.cfg, "high_flow_only", False) and valid_samples.size > 0:
                 lowest_freq = utils.sort_frequencies(self.frequencies)[0]
@@ -865,7 +859,17 @@ class BaseDataset(Dataset):
                         f"cfg.target_variables ({self.cfg.target_variables})."
                     )
                 target_idx = self.cfg.target_variables.index(target_name)
+
+                # numeric settings
                 threshold = getattr(self.cfg, "high_flow_threshold", 40.0)
+                min_fraction = getattr(self.cfg, "high_flow_min_fraction", 0.3)
+                # LOGGER.info(f"[High-flow filter] Threshold ={threshold}")
+                # , threshold,
+                #     "min_fraction =", min_fraction)
+# print(
+#                     "\n[High-flow filter] Threshold =", threshold,
+#                     "min_fraction =", min_fraction
+#                 )
 
                 # y at lowest frequency, currently in *normalized* units
                 y_low_norm = y[lowest_freq][:, target_idx]
@@ -876,23 +880,49 @@ class BaseDataset(Dataset):
                 y_low_phys = y_low_norm * scale + center
                 # -------------------------------------
 
-                # last index in lowest_freq for each valid sample
+                # last index (in lowest_freq) for each valid sample
                 last_idx_low = frequency_maps[lowest_freq][valid_samples]
 
-                # keep only samples whose final *physical* target is >= threshold
-                high_mask = y_low_phys[last_idx_low] >= threshold
+                # sequence length for the lowest frequency
+                try:
+                    low_pos = self.frequencies.index(lowest_freq)
+                except ValueError as exc:
+                    raise RuntimeError(
+                        f"Frequency {lowest_freq} not found in self.frequencies"
+                    ) from exc
+                seq_len_low = int(self.seq_len[low_pos])
 
-                # (optional) debug logging if everything is filtered out
+                # indices for the full sequence window at lowest_freq:
+                # [last_idx - (seq_len_low - 1), ..., last_idx]
+                offsets = np.arange(seq_len_low, dtype=int)
+                start_indices = last_idx_low - (seq_len_low - 1)
+                # safety guard; in theory _validate_samples already ensures start_indices >= 0
+                start_indices = np.clip(start_indices, 0, len(y_low_phys) - 1)
+
+                window_indices = start_indices[:, None] + offsets[None, :]
+                window_indices = np.clip(window_indices, 0, len(y_low_phys) - 1)
+
+                # extract the full window of physical targets for each sample
+                window_vals = y_low_phys[window_indices]  # shape: (n_samples, seq_len_low)
+
+                # fraction of timesteps in the window above threshold
+                frac_high = np.mean(window_vals >= threshold, axis=1)
+
+                # keep only samples with enough high-flow timesteps
+                high_mask = frac_high >= min_fraction
+
                 if not np.any(high_mask):
                     LOGGER.warning(
                         "High-flow filter removed all samples in basin %s "
-                        "(threshold=%s, target=%s).",
+                        "(threshold=%s, min_fraction=%s, target=%s).",
                         basin,
                         threshold,
+                        min_fraction,
                         target_name,
                     )
 
                 valid_samples = valid_samples[high_mask]
+
 
             # -----------------------------------------------------------------
             # Store pointer to basin and sample index for each frequency
