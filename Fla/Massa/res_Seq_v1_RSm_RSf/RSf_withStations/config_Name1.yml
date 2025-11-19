@@ -23,30 +23,76 @@ num_workers: 16           # Data loader workers
 data_dir: "../../data"    # Path to dataset
 dataset:  "swisshourly"   # Dataset name # for example "swisshourly"
 
-train_basin_file:      "../../data/basins_2.txt" # File listing training basins
-validation_basin_file: "../../data/basins_2.txt" # File listing validation basins
-test_basin_file:       "../../data/basins_2.txt" # File listing test basins
+train_basin_file:      "../../data/RS_v1.txt" # File listing training basins
+validation_basin_file: "../../data/RS_v1.txt" # File listing validation basins
+test_basin_file:       "../../data/RS_v1.txt" # File listing test basins
 
-train_start_date:       2020-03-01   # first valid day of January
-train_end_date:         2023-02-28   # last valid day of February
-validation_start_date:  2023-03-01
-validation_end_date:    2024-03-31
-test_start_date:        2024-04-01
-test_end_date:          2025-07-02   
+train_start_date:       03/05/2020   
+train_end_date:         30/03/2023   
+validation_start_date:  01/04/2023
+validation_end_date:    04/02/2024
+test_start_date:        01/04/2023
+test_end_date:          04/02/2024   
 
 dynamic_inputs:  
-- Feat1
-- Feat2
-- fc_Feat1
-- fc_Feat2
+- streamflow_hindcast
+- null_values
+- Massa|22_Q simule
+- Massa|69_i
+- Massa|69_T
+- Massa|70_h
+- Massa|71_h
+# - Massa|71_A
+# - Massa|73_H
+# - Massa|73_A
+- HourOfDaySinus
+- DayOfYearSinus
+- fc_Massa|22_Q simule
+- fc_Massa|69_i
+- fc_Massa|69_T
+- fc_Massa|70_h
+- fc_Massa|71_h
+# - fc_Massa|71_A
+# - fc_Massa|73_H
+# - fc_Massa|73_A
+- temp_m1	
+- fc_temp_m1	
+- is_m1_snow		
+- fc_is_m1_snow		
+- temp_m1_12h	
+- fc_temp_m1_12h	
 
 hindcast_inputs:
-- Feat1
-- Feat2
+- streamflow_hindcast
+- Massa|22_Q simule
+- Massa|69_i
+- Massa|69_T
+- Massa|70_h
+- Massa|71_h
+# - Massa|71_A
+# - Massa|73_H
+# - Massa|73_A
+- HourOfDaySinus
+- DayOfYearSinus
+- temp_m1	
+- is_m1_snow		
+- temp_m1_12h	
 
 forecast_inputs:
-- fc_Feat1
-- fc_Feat2
+- null_values
+- fc_Massa|22_Q simule
+- fc_Massa|69_i
+- fc_Massa|69_T
+- fc_Massa|70_h
+- fc_Massa|71_h
+# - fc_Massa|71_A
+# - fc_Massa|73_H
+# - fc_Massa|73_A
+- HourOfDaySinus
+- DayOfYearSinus
+- fc_temp_m1	
+- fc_is_m1_snow		
+- fc_temp_m1_12h	
 
 timestep_counter: true    # adds a feature that counts the time step in the sequence
 
@@ -55,6 +101,11 @@ target_variables:  # streamflow name is "forced", code not modularized enough
   - streamflow
 clip_targets_to_zero:
   - streamflow
+
+# Only keep sequences whose last target 'streamflow' > 40
+high_flow_only: true
+high_flow_target: streamflow   # must be in cfg.target_variables
+high_flow_threshold: 10.0
 
 # custom_normalization:
 #   streamflow: 
@@ -80,26 +131,26 @@ clip_targets_to_zero:
 # Model
 # ==============================================================================
 
-model: "handoff_forecast_lstm"  # Model type (e.g. "lstm", "transformer", "arlstm")
+model: "sequential_forecast_lstm"  # Model type (e.g. "lstm", "transformer", "arlstm")
 head: "regression" 
 
-hidden_size:          32       # Model hidden size (int or dict)
-hindcast_hidden_size: 32
-forecast_hidden_size: 32
+hidden_size:          128+       # Model hidden size (int or dict)
+# hindcast_hidden_size: 256
+# forecast_hidden_size: 256
 
 output_activation: "linear"
-output_dropout: 0.01
+output_dropout: 0.4
 
 # LSTM
 lstm_dropout: 0.0           # Dropout probability (0–1).
 num_layers: 1               # Number of LSTM layers (int)
-initial_forget_bias: 1.5    # Initial bias value of the forget gate (0-3, high helps the model remember the past)
+initial_forget_bias: 1    # Initial bias value of the forget gate (0-3, high helps the model remember the past)
 
 # Handoff Sequential LSTM
-state_handoff_network:
-  hiddens: [128]
-  activation: gelu
-  dropout: 0.00
+# state_handoff_network:
+#   hiddens: [128]
+#   activation: gelu
+#   dropout: 0.00
 
 # Add embedding for dynamical features
 # dynamics_embedding:
@@ -124,7 +175,7 @@ batch_size: 32  # Mini-batch size (int).
 optimizer: "AdamW"        # Specify optimizer [Adam. AdamW]
 loss: custom_loss         # Specify loss [MSE, NSE, RMSE, ...]
 
-seq_length: 72             # Input sequence length, in frequency of measure
+seq_length: 96             # Input sequence length, in frequency of measure
 predict_last_n: 24         # Prediction horizon
 
 forecast_seq_length: 24    # Must be < seq_length, length of sequence that uses the forecast features
@@ -140,7 +191,7 @@ custom_loss:              # Custom loss function
   - 0.2
   - 0.2
 
-clip_gradient_norm: 5.0   # Avoids exploding gradients
+clip_gradient_norm: 2.0   # Avoids exploding gradients
 
 metrics:
 - MAPE
@@ -154,8 +205,8 @@ validate_n_random_basins: 1
 
 # NEED validate_every set to 1
 early_stopping: true
-patience_early_stopping:              20
-minimum_epochs_before_early_stopping: 20
+patience_early_stopping:              10
+minimum_epochs_before_early_stopping: 15
 min_delta_early_stopping:             1e-7
 
 # Dynamic LR

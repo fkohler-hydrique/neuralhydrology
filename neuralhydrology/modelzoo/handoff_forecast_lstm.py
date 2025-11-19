@@ -95,7 +95,7 @@ class HandoffForecastLSTM(BaseModel):
             activation_layer = nn.ReLU()
         elif activation_name == "sigmoid":
             activation_layer = nn.Sigmoid()
-        elif activation_name == "linear":
+        elif activation_name == "id":
             activation_layer = nn.Identity()
         elif activation_name == "tanh":
             activation_layer = nn.Tanh()
